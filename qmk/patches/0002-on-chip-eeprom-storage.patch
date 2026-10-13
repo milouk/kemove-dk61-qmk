@@ -1,0 +1,140 @@
+diff --git a/keyboards/kemove/ld/LPC11U35_401_app.ld b/keyboards/kemove/ld/LPC11U35_401_app.ld
+index 720b00c..fce513e 100644
+--- a/keyboards/kemove/ld/LPC11U35_401_app.ld
++++ b/keyboards/kemove/ld/LPC11U35_401_app.ld
+@@ -33,7 +33,7 @@ MEMORY {
+     flash5  : org = 0x00000000, len = 0
+     flash6  : org = 0x00000000, len = 0
+     flash7  : org = 0x00000000, len = 0
+-    ram0    : org = 0x10000200, len = 7680
++    ram0    : org = 0x10000200, len = 7648   /* the ROM's IAP routines use the top 32 bytes of RAM */
+     ram1    : org = 0x00000000, len = 0
+     ram2    : org = 0x00000000, len = 0
+     ram3    : org = 0x00000000, len = 0
+diff --git a/keyboards/kemove/snowfox/eeprom_lpc11u.c b/keyboards/kemove/snowfox/eeprom_lpc11u.c
+new file mode 100644
+index 0000000..816deba
+--- /dev/null
++++ b/keyboards/kemove/snowfox/eeprom_lpc11u.c
+@@ -0,0 +1,92 @@
++// Copyright 2026 Michael Loukeris (@milouk)
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++// EEPROM driver for the LPC11U2x/3x on-chip EEPROM, through the ROM's IAP calls.
++// Only the EEPROM commands are ever issued here, so this cannot alter flash.
++
++#include <string.h>
++#include "ch.h"
++#include "hal.h"
++#include "eeprom_driver.h"
++
++#define IAP_ENTRY 0x1FFF1FF1U
++#define IAP_CMD_EEPROM_WRITE 61U
++#define IAP_CMD_EEPROM_READ 62U
++#define IAP_CMD_SUCCESS 0U
++
++// The top 64 bytes of the 4 kB EEPROM are reserved by the ROM.
++#define LPC_EEPROM_USABLE (4096U - 64U)
++
++#if EEPROM_SIZE > LPC_EEPROM_USABLE
++#    error EEPROM_SIZE is larger than the usable on-chip EEPROM
++#endif
++
++// The ROM copies from RAM, and callers may hand us pointers into flash.
++#define BOUNCE_SIZE 32U
++
++typedef void (*iap_entry_t)(uint32_t[], uint32_t[]);
++
++static bool iap_eeprom(uint32_t command_code, uint32_t ee_addr, uint8_t *ram, uint32_t len) {
++    uint32_t command[5] = {command_code, ee_addr, (uint32_t)ram, len, CPU_CLOCK / 1000U};
++    uint32_t result[4]  = {~IAP_CMD_SUCCESS, 0, 0, 0};
++
++    // UM10462 20.8.7: interrupts must not run during an IAP call.
++    syssts_t sts = chSysGetStatusAndLockX();
++    ((iap_entry_t)IAP_ENTRY)(command, result);
++    chSysRestoreStatusX(sts);
++
++    return result[0] == IAP_CMD_SUCCESS;
++}
++
++static size_t clamp_length(uintptr_t offset, size_t len) {
++    if (offset >= EEPROM_SIZE) {
++        return 0;
++    }
++    if (len > EEPROM_SIZE - offset) {
++        len = EEPROM_SIZE - offset;
++    }
++    return len;
++}
++
++void eeprom_driver_init(void) {}
++
++void eeprom_driver_erase(void) {
++    uint8_t blank[BOUNCE_SIZE];
++    memset(blank, 0xFF, sizeof(blank));
++
++    for (uint32_t addr = 0; addr < EEPROM_SIZE; addr += BOUNCE_SIZE) {
++        uint32_t len = EEPROM_SIZE - addr < BOUNCE_SIZE ? EEPROM_SIZE - addr : BOUNCE_SIZE;
++        iap_eeprom(IAP_CMD_EEPROM_WRITE, addr, blank, len);
++    }
++}
++
++void eeprom_read_block(void *buf, const void *addr, size_t len) {
++    uintptr_t offset = (uintptr_t)addr;
++    size_t    usable = clamp_length(offset, len);
++
++    // Bytes outside the EEPROM, or a failed read, come back as erased.
++    memset(buf, 0xFF, len);
++    if (usable > 0) {
++        if (!iap_eeprom(IAP_CMD_EEPROM_READ, offset, buf, usable)) {
++            memset(buf, 0xFF, len);
++        }
++    }
++}
++
++void eeprom_write_block(const void *buf, void *addr, size_t len) {
++    uintptr_t      offset = (uintptr_t)addr;
++    const uint8_t *src    = buf;
++    uint8_t        bounce[BOUNCE_SIZE];
++
++    len = clamp_length(offset, len);
++    while (len > 0) {
++        size_t chunk = len < BOUNCE_SIZE ? len : BOUNCE_SIZE;
++        memcpy(bounce, src, chunk);
++        if (!iap_eeprom(IAP_CMD_EEPROM_WRITE, offset, bounce, chunk)) {
++            return;
++        }
++        offset += chunk;
++        src += chunk;
++        len -= chunk;
++    }
++}
+diff --git a/keyboards/kemove/snowfox/rules.mk b/keyboards/kemove/snowfox/rules.mk
+index cb6efff..4edf8b3 100755
+--- a/keyboards/kemove/snowfox/rules.mk
++++ b/keyboards/kemove/snowfox/rules.mk
+@@ -43,4 +43,8 @@ BLUETOOTH_ENABLE = yes
+ BLUETOOTH_DRIVER = custom
+ 
+ KEYBOARD_SHARED_EP = yes
+-NKRO_ENABLE = no
+\ No newline at end of file
++NKRO_ENABLE = no
++
++# Settings are kept in the MCU's on-chip EEPROM (IAP commands 61/62).
++EEPROM_DRIVER = custom
++SRC += eeprom_lpc11u.c
+diff --git a/keyboards/kemove/snowfox/v1_5/config.h b/keyboards/kemove/snowfox/v1_5/config.h
+index d8b7b89..2eeeca6 100644
+--- a/keyboards/kemove/snowfox/v1_5/config.h
++++ b/keyboards/kemove/snowfox/v1_5/config.h
+@@ -46,6 +46,9 @@
+ /* Debounce reduces chatter (unintended double-presses) - set 0 if debouncing is not needed */
+ #define DEBOUNCE 5
+ 
++/* Bytes of the 4 kB on-chip EEPROM handed to QMK (the top 64 bytes are reserved by the ROM). */
++#define EEPROM_SIZE 1024
++
+ /* number of backlight levels */
+ // #define BACKLIGHT_LEVELS 10
+ 

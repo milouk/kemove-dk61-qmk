@@ -1,0 +1,206 @@
+{
+  "name": "Kemove DK61 Shadow/Snowfox v1.5 (QMK)",
+  "vendorId": "0x1209",
+  "productId": "0x0069",
+  "matrix": {
+    "rows": 8,
+    "cols": 9
+  },
+  "customKeycodes": [
+    {
+      "name": "LED On",
+      "title": "LED On",
+      "shortName": "LED On"
+    },
+    {
+      "name": "LED Off",
+      "title": "LED Off",
+      "shortName": "LED Off"
+    },
+    {
+      "name": "LED Mode",
+      "title": "Next lighting mode",
+      "shortName": "LED Mode"
+    },
+    {
+      "name": "LED Up",
+      "title": "Lighting effect up",
+      "shortName": "LED Up"
+    },
+    {
+      "name": "LED Down",
+      "title": "Lighting effect down",
+      "shortName": "LED Down"
+    },
+    {
+      "name": "Bright+",
+      "title": "Brightness up",
+      "shortName": "Bright+"
+    },
+    {
+      "name": "Bright-",
+      "title": "Brightness down",
+      "shortName": "Bright-"
+    },
+    {
+      "name": "BT Conn",
+      "title": "Bluetooth connect",
+      "shortName": "BT Conn"
+    },
+    {
+      "name": "BT Pair",
+      "title": "Bluetooth pair",
+      "shortName": "BT Pair"
+    },
+    {
+      "name": "BT Drop",
+      "title": "Bluetooth disconnect",
+      "shortName": "BT Drop"
+    },
+    {
+      "name": "BT 1",
+      "title": "Bluetooth slot 1 (hold 3 s to pair)",
+      "shortName": "BT 1"
+    },
+    {
+      "name": "BT 2",
+      "title": "Bluetooth slot 2 (hold 3 s to pair)",
+      "shortName": "BT 2"
+    },
+    {
+      "name": "BT 3",
+      "title": "Bluetooth slot 3 (hold 3 s to pair)",
+      "shortName": "BT 3"
+    },
+    {
+      "name": "Debug",
+      "title": "Unused",
+      "shortName": "Debug"
+    },
+    {
+      "name": "LED Tog",
+      "title": "Lighting on/off",
+      "shortName": "LED Tog"
+    }
+  ],
+  "layouts": {
+    "keymap": [
+      [
+        "0,0",
+        "0,1",
+        "0,2",
+        "0,3",
+        "0,4",
+        "0,5",
+        "0,6",
+        "0,7",
+        "0,8",
+        "5,0",
+        "5,1",
+        "5,2",
+        "5,3",
+        {
+          "w": 2
+        },
+        "5,4"
+      ],
+      [
+        {
+          "w": 1.5
+        },
+        "1,0",
+        "1,1",
+        "1,2",
+        "1,3",
+        "1,4",
+        "1,5",
+        "1,6",
+        "1,7",
+        "1,8",
+        "6,0",
+        "6,1",
+        "6,2",
+        "7,2",
+        {
+          "w": 1.5
+        },
+        "6,3"
+      ],
+      [
+        {
+          "w": 1.75
+        },
+        "2,0",
+        "2,1",
+        "2,2",
+        "2,3",
+        "2,4",
+        "2,5",
+        "2,6",
+        "2,7",
+        "2,8",
+        "7,1",
+        "6,4",
+        "7,0",
+        {
+          "w": 2.25
+        },
+        "7,7"
+      ],
+      [
+        {
+          "w": 2.25
+        },
+        "3,0",
+        "3,2",
+        "3,3",
+        "3,4",
+        "3,5",
+        "3,6",
+        "3,7",
+        "3,8",
+        "7,3",
+        "4,3",
+        "4,4",
+        {
+          "w": 2.75
+        },
+        "7,4"
+      ],
+      [
+        {
+          "w": 1.25
+        },
+        "4,0",
+        {
+          "w": 1.25
+        },
+        "4,2",
+        {
+          "w": 1.25
+        },
+        "4,5",
+        {
+          "w": 6.25
+        },
+        "5,6",
+        {
+          "w": 1.25
+        },
+        "5,8",
+        {
+          "w": 1.25
+        },
+        "5,7",
+        {
+          "w": 1.25
+        },
+        "4,7",
+        {
+          "w": 1.25
+        },
+        "6,7"
+      ]
+    ]
+  }
+}

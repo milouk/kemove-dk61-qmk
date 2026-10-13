@@ -61,7 +61,8 @@ Flashed and running on this board.
 - The bootloader stalls SET_INTERFACE, which makes `dfu-util` fail on macOS. Its transfer size is 64 bytes, it supports upload, and a second GETSTATUS after the manifest step resets the board.
 - The Bluetooth status lights sit under Z, X and C (slots 1 to 3), purple; blinking means discovering or connecting.
 - The fork's default keymap enables Auto Shift and tap-and-hold keys; with those on, the `.` key intermittently stuck repeating. Not seen since both were removed.
-- This QMK build contains no flash-writing code, so nothing is persisted and it cannot touch the bootloader.
+- The LPC11U35/401 has a 4 kB on-chip EEPROM (top 64 bytes reserved), read and written with IAP commands 62 and 61. The storage driver issues only those two commands, so it cannot alter flash or the bootloader. IAP calls need interrupts off, and the ROM's flash routines use the top 32 bytes of RAM, which the linker script leaves free.
+- RAM is 8 kB. The VIA build leaves about 1.6 kB unused.
 
 ## Sonix generations (not this board)
 

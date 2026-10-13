@@ -61,10 +61,20 @@ index 18c49e1..08c30ad 100755
                  return false;
              default:
 diff --git a/keyboards/kemove/snowfox/snowfox.h b/keyboards/kemove/snowfox/snowfox.h
-index ade1ca1..b7cfa2b 100644
+index ade1ca1..8899a58 100644
 --- a/keyboards/kemove/snowfox/snowfox.h
 +++ b/keyboards/kemove/snowfox/snowfox.h
-@@ -24,6 +24,7 @@ enum SNOWFOX_KEYCODES {
+@@ -10,7 +10,8 @@
+ #define SF_LED_STEP 0x40
+ 
+ enum SNOWFOX_KEYCODES {
+-    SNOWFOX_LED_ON = SAFE_RANGE,
++    // QK_KB_0 so that VIA can address these as custom keycodes.
++    SNOWFOX_LED_ON = QK_KB_0,
+     SNOWFOX_LED_OFF,
+     SNOWFOX_LED_NEXT, // Next Profile
+     SNOWFOX_LED_PUP, // Profile Specific action Up
+@@ -24,6 +25,7 @@ enum SNOWFOX_KEYCODES {
      SNOWFOX_BLE_KB2,
      SNOWFOX_BLE_KB3,
      SNOWFOX_DEBUG,
@@ -72,7 +82,7 @@ index ade1ca1..b7cfa2b 100644
      SNOWFOX_SAFE_RANGE,
  };
  
-@@ -45,5 +46,6 @@ void snowfox_early_led_init(void);
+@@ -45,5 +47,6 @@ void snowfox_early_led_init(void);
  void snowfox_led_on(void);
  void snowfox_led_off(void);
  void snowfox_led_next(void);

@@ -23,13 +23,16 @@ The PCB revision is printed on the board. v1.4 shares the v1.5 pin layout but is
 | USB typing, stock layout | Working |
 | Updates over USB, no disassembly | Working |
 | Fn layer, lighting, Bluetooth, battery | Built, not yet tested |
-| Lighting speed/colour keys, profiles, Fn lock, factory reset, battery display, saved settings | Missing |
+| Saved settings (on-chip EEPROM), VIA keymap editing | Built, not yet tested |
+| Lighting speed/colour keys, profiles, Fn lock, factory reset, battery display, VIA lighting control | Missing |
 
 Kemove's APEX software does not talk to QMK.
 
 ## What is in here
 
 - `qmk/keymaps/stock/` — stock layout and Fn shortcuts, from Kemove's K61 manual. Fn+B enters the bootloader.
+- `qmk/keymaps/via/` — the same keymap with VIA enabled.
+- `qmk/via/` — VIA definition; load it in VIA's Design tab.
 - `qmk/patches/` — changes to the upstream QMK fork and to the bootloader.
 - `tools/sfdfu.py` — firmware updater for the OpenKemove bootloader. `dfu-util` fails with it on macOS.
 - `tools/analysis/` — scripts used to unpack Kemove's installers and inspect firmware images.
@@ -45,9 +48,9 @@ Needs `arm-none-eabi-gcc` and the QMK CLI.
 # QMK
 git clone --recursive https://github.com/thedelog/Kemove-Snowfox-Media_keys_on_BLE.git qmk_firmware
 cd qmk_firmware
-git apply ../qmk/patches/0001-led-toggle-and-long-press-bluetooth-pairing.patch
-cp -r ../qmk/keymaps/stock keyboards/kemove/snowfox/keymaps/
-make kemove/snowfox/v1_5:stock
+git apply ../qmk/patches/000*.patch
+cp -r ../qmk/keymaps/* keyboards/kemove/snowfox/keymaps/
+make kemove/snowfox/v1_5:stock   # or :via
 
 # Bootloader
 git clone --recursive https://github.com/OpenKemove/kemove_lpc_dfu.git
