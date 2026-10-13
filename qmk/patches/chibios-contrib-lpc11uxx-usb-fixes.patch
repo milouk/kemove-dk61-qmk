@@ -1,0 +1,28 @@
+diff --git a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+index aeb38a4..18177da 100644
+--- a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
++++ b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.c
+@@ -161,10 +161,6 @@ static size_t usb_packet_receive(USBDriver *usbp, usbep_t ep) {
+     // ReSetup for recieve
+     USB_EPLIST->entry[4 * ep] |= EPLIST_ENTRY_NBYTES(epcp->out_maxsize) |
+       EPLIST_ADDR(usbp->epn_buffer[ep * 2]) | EPLIST_ENTRY_ACTIVE;
+-  } else {
+-    if (ep != 0) {
+-      USB_EPLIST->entry[4 * ep] |= EPLIST_ENTRY_STALL;
+-    }
+   }
+ 
+   return n;
+diff --git a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.h b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.h
+index 4cc3ee7..978689d 100644
+--- a/os/hal/ports/LPC/LLD/USB/hal_usb_lld.h
++++ b/os/hal/ports/LPC/LLD/USB/hal_usb_lld.h
+@@ -34,7 +34,7 @@
+ /**
+  * @brief   Maximum endpoint address.
+  */
+-#define USB_MAX_ENDPOINTS                   5
++#define USB_MAX_ENDPOINTS                   4
+ 
+ /**
+  * @brief   Status stage handling method.

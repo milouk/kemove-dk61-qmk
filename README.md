@@ -23,7 +23,7 @@ The PCB revision is printed on the board. v1.4 shares the v1.5 pin layout but is
 | USB typing, stock layout | Working |
 | Updates over USB, no disassembly | Working |
 | Fn layer, lighting, Bluetooth, battery | Built, not yet tested |
-| Saved settings (on-chip EEPROM), VIA keymap editing | Built, not yet tested |
+| Saved settings (on-chip EEPROM), VIA keymap editing | Working |
 | Lighting speed/colour keys, profiles, Fn lock, factory reset, battery display, VIA lighting control | Missing |
 
 Kemove's APEX software does not talk to QMK.
@@ -49,6 +49,7 @@ Needs `arm-none-eabi-gcc` and the QMK CLI.
 git clone --recursive https://github.com/thedelog/Kemove-Snowfox-Media_keys_on_BLE.git qmk_firmware
 cd qmk_firmware
 git apply ../qmk/patches/000*.patch
+git -C lib/chibios-contrib apply ../../../qmk/patches/chibios-contrib-lpc11uxx-usb-fixes.patch
 cp -r ../qmk/keymaps/* keyboards/kemove/snowfox/keymaps/
 make kemove/snowfox/v1_5:stock   # or :via
 

@@ -63,6 +63,13 @@ Flashed and running on this board.
 - The fork's default keymap enables Auto Shift and tap-and-hold keys; with those on, the `.` key intermittently stuck repeating. Not seen since both were removed.
 - The LPC11U35/401 has a 4 kB on-chip EEPROM (top 64 bytes reserved), read and written with IAP commands 62 and 61. The storage driver issues only those two commands, so it cannot alter flash or the bootloader. IAP calls need interrupts off, and the ROM's flash routines use the top 32 bytes of RAM, which the linker script leaves free.
 - RAM is 8 kB. The VIA build leaves about 1.6 kB unused.
+- Three USB bugs stood between this port and VIA, all fixed by the patches here:
+  - `raw_hid_send()` waited forever for the host to collect a reply. One stuck reply froze the main loop: no keys, no Fn+B. It now gives up after 50 ms.
+  - The LPC USB driver set STALL on an OUT endpoint after every completed transfer. Back-to-back requests then failed on the host and were lost. A finished endpoint is now left idle.
+  - The driver declared five endpoints besides EP0; the LPC11Uxx has four. A fifth endpoint (console IN plus OUT alongside raw HID) wrote past the driver's buffer table.
+- The Bluetooth status blink is done by the SLED1734x itself, so it carries on when the MCU is hung. It is not a sign the firmware is alive.
+- With the battery connected, the Esc-at-plug-in bootloader entry only works if the chip really loses power. Fn+B does not have that limit.
+- VIA's bootloader-jump command is refused by this firmware.
 
 ## Sonix generations (not this board)
 
