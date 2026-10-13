@@ -1,0 +1,564 @@
+From 2bd1332df4d3a56715973983e6b45d36e7f4e530 Mon Sep 17 00:00:00 2001
+From: Michael Loukeris <loukerismichalis@gmail.com>
+Date: Wed, 14 Oct 2026 02:20:15 +0300
+Subject: [PATCH 1/2] Add NXP LPC11U35 support
+
+---
+ builddefs/common_features.mk                  |   4 +
+ data/schemas/keyboard.jsonschema              |   1 +
+ docs/compatible_microcontrollers.md           |   4 +
+ .../handwired/onekey/lpc11u35/keyboard.json   |   9 ++
+ keyboards/handwired/onekey/lpc11u35/readme.md |   7 +
+ lib/python/qmk/constants.py                   |   2 +-
+ .../boards/GENERIC_LPC_11U35/board/board.mk   |   1 +
+ .../boards/GENERIC_LPC_11U35/configs/chconf.h |  10 ++
+ .../GENERIC_LPC_11U35/configs/mcuconf.h       |  27 ++++
+ .../chibios/drivers/eeprom/eeprom_lpc11uxx.c  | 150 ++++++++++++++++++
+ .../chibios/drivers/eeprom/eeprom_lpc11uxx.h  |  16 ++
+ platforms/chibios/mcu_selection.mk            |  31 ++++
+ platforms/eeprom.h                            |   3 +
+ 13 files changed, 264 insertions(+), 1 deletion(-)
+ create mode 100644 keyboards/handwired/onekey/lpc11u35/keyboard.json
+ create mode 100644 keyboards/handwired/onekey/lpc11u35/readme.md
+ create mode 100644 platforms/chibios/boards/GENERIC_LPC_11U35/board/board.mk
+ create mode 100644 platforms/chibios/boards/GENERIC_LPC_11U35/configs/chconf.h
+ create mode 100644 platforms/chibios/boards/GENERIC_LPC_11U35/configs/mcuconf.h
+ create mode 100644 platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.c
+ create mode 100644 platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.h
+
+diff --git a/builddefs/common_features.mk b/builddefs/common_features.mk
+index b15d9565..201d84a7 100644
+--- a/builddefs/common_features.mk
++++ b/builddefs/common_features.mk
+@@ -247,6 +247,10 @@ ifneq ($(strip $(EEPROM_DRIVER)),none)
+           OPT_DEFS += -DEEPROM_DRIVER -DEEPROM_WEAR_LEVELING
+           SRC += eeprom_driver.c eeprom_wear_leveling.c
+           WEAR_LEVELING_DRIVER ?= rp2040_flash
++        else ifneq ($(filter $(MCU_SERIES),LPC11Uxx),)
++          # True EEPROM on LPC11U2x, LPC11U3x
++          OPT_DEFS += -DEEPROM_DRIVER -DEEPROM_LPC11UXX
++          SRC += eeprom_driver.c eeprom_lpc11uxx.c
+         else ifneq ($(filter $(MCU_SERIES),KL2x K20x),)
+           # Teensy EEPROM implementations
+           OPT_DEFS += -DEEPROM_KINETIS_FLEXRAM
+diff --git a/data/schemas/keyboard.jsonschema b/data/schemas/keyboard.jsonschema
+index 1e28d176..b6dfd300 100644
+--- a/data/schemas/keyboard.jsonschema
++++ b/data/schemas/keyboard.jsonschema
+@@ -100,6 +100,7 @@
+                 "WB32F3G71",
+                 "WB32FQ95",
+                 "AT32F415",
++                "LPC11U35",
+                 "atmega16u2",
+                 "atmega32u2",
+                 "atmega16u4",
+diff --git a/docs/compatible_microcontrollers.md b/docs/compatible_microcontrollers.md
+index 6d1ed2e5..26368029 100644
+--- a/docs/compatible_microcontrollers.md
++++ b/docs/compatible_microcontrollers.md
+@@ -57,6 +57,10 @@ You can also use any ARM chip with USB that [ChibiOS](https://www.chibios.org) s
+  * [WB32F3G71xx](http://www.westberrytech.com)
+  * [WB32FQ95xx](http://www.westberrytech.com)
+ 
++### NXP (LPC)
++
++ * [LPC11U35](https://www.nxp.com/products/LPC11U3x)
++
+ ### Artery (AT32)
+ 
+  * [AT32F415](https://www.arterychip.com/en/product/AT32F415.jsp)
+diff --git a/keyboards/handwired/onekey/lpc11u35/keyboard.json b/keyboards/handwired/onekey/lpc11u35/keyboard.json
+new file mode 100644
+index 00000000..f31bb4bd
+--- /dev/null
++++ b/keyboards/handwired/onekey/lpc11u35/keyboard.json
+@@ -0,0 +1,9 @@
++{
++    "keyboard_name": "Onekey LPC11U35",
++    "bootloader": "custom",
++    "matrix_pins": {
++        "cols": ["A16"],
++        "rows": ["A17"]
++    },
++    "processor": "LPC11U35"
++}
+diff --git a/keyboards/handwired/onekey/lpc11u35/readme.md b/keyboards/handwired/onekey/lpc11u35/readme.md
+new file mode 100644
+index 00000000..8740a2e3
+--- /dev/null
++++ b/keyboards/handwired/onekey/lpc11u35/readme.md
+@@ -0,0 +1,7 @@
++# NXP LPC11U35 Onekey
++
++To trigger keypress, short together pins *A16* (PIO0_16) and *A17* (PIO0_17).
++
++Port 0 is `A`, port 1 is `B`.
++
++The chip has no bootloader that QMK can flash through. Hold PIO0_1 low at reset to get the ROM's USB mass storage mode and replace `firmware.bin` with the `.bin` file.
+diff --git a/lib/python/qmk/constants.py b/lib/python/qmk/constants.py
+index e3e47c2b..4ca8a660 100644
+--- a/lib/python/qmk/constants.py
++++ b/lib/python/qmk/constants.py
+@@ -22,7 +22,7 @@ QMK_FIRMWARE_UPSTREAM = 'qmk/qmk_firmware'
+ MAX_KEYBOARD_SUBFOLDERS = 5
+ 
+ # Supported processor types
+-CHIBIOS_PROCESSORS = 'cortex-m0', 'cortex-m0plus', 'cortex-m3', 'cortex-m4', 'MKL26Z64', 'MK20DX128', 'MK20DX256', 'MK64FX512', 'MK66FX1M0', 'RP2040', 'STM32F042', 'STM32F072', 'STM32F103', 'STM32F303', 'STM32F401', 'STM32F405', 'STM32F407', 'STM32F411', 'STM32F446', 'STM32G0B1', 'STM32G431', 'STM32G474', 'STM32H723', 'STM32H733', 'STM32L412', 'STM32L422', 'STM32L432', 'STM32L433', 'STM32L442', 'STM32L443', 'GD32VF103', 'WB32F3G71', 'WB32FQ95', 'AT32F415'
++CHIBIOS_PROCESSORS = 'cortex-m0', 'cortex-m0plus', 'cortex-m3', 'cortex-m4', 'LPC11U35', 'MKL26Z64', 'MK20DX128', 'MK20DX256', 'MK64FX512', 'MK66FX1M0', 'RP2040', 'STM32F042', 'STM32F072', 'STM32F103', 'STM32F303', 'STM32F401', 'STM32F405', 'STM32F407', 'STM32F411', 'STM32F446', 'STM32G0B1', 'STM32G431', 'STM32G474', 'STM32H723', 'STM32H733', 'STM32L412', 'STM32L422', 'STM32L432', 'STM32L433', 'STM32L442', 'STM32L443', 'GD32VF103', 'WB32F3G71', 'WB32FQ95', 'AT32F415'
+ LUFA_PROCESSORS = 'at90usb162', 'atmega16u2', 'atmega32u2', 'atmega16u4', 'atmega32u4', 'at90usb646', 'at90usb647', 'at90usb1286', 'at90usb1287', None
+ VUSB_PROCESSORS = 'atmega32a', 'atmega328p', 'atmega328', 'attiny85'
+ 
+diff --git a/platforms/chibios/boards/GENERIC_LPC_11U35/board/board.mk b/platforms/chibios/boards/GENERIC_LPC_11U35/board/board.mk
+new file mode 100644
+index 00000000..fe5f311b
+--- /dev/null
++++ b/platforms/chibios/boards/GENERIC_LPC_11U35/board/board.mk
+@@ -0,0 +1 @@
++include $(CHIBIOS_CONTRIB)/os/hal/boards/LPC11U35_GENERIC/board.mk
+diff --git a/platforms/chibios/boards/GENERIC_LPC_11U35/configs/chconf.h b/platforms/chibios/boards/GENERIC_LPC_11U35/configs/chconf.h
+new file mode 100644
+index 00000000..b936bcd0
+--- /dev/null
++++ b/platforms/chibios/boards/GENERIC_LPC_11U35/configs/chconf.h
+@@ -0,0 +1,10 @@
++// Copyright 2026 Michael Loukeris (@milouk)
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#pragma once
++
++#define CH_CFG_ST_FREQUENCY 1000
++
++#define CH_CFG_ST_TIMEDELTA 0
++
++#include_next <chconf.h>
+diff --git a/platforms/chibios/boards/GENERIC_LPC_11U35/configs/mcuconf.h b/platforms/chibios/boards/GENERIC_LPC_11U35/configs/mcuconf.h
+new file mode 100644
+index 00000000..aed7733e
+--- /dev/null
++++ b/platforms/chibios/boards/GENERIC_LPC_11U35/configs/mcuconf.h
+@@ -0,0 +1,27 @@
++// Copyright 2026 Michael Loukeris (@milouk)
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#pragma once
++
++#include "nvic.h"
++
++#define LPC11U35_MCUCONF
++
++/* 12 MHz crystal, PLL to 48 MHz. USB needs both. */
++#define LPC_USE_SYSOSC TRUE
++#define LPC_SYSOSC_FREQUENCY 12000000UL
++#define LPC_SYSPLLCLKSEL SYSCON_SYSPLLCLKSEL_SYSOSC
++#define LPC_MAINCLKSEL SYSCON_MAINCLKSEL_PLLOUT
++#define LPC_SYSPLL_MULT 4
++#define LPC_SYSPLL_PDIV 4
++#define LPC_SYS_DIV 1
++
++#define LPC_USB_USE_USB1 TRUE
++#define LPC_USB_USB1_IRQ_PRIORITY 3
++
++#define LPC_SPI_USE_SPI1 FALSE
++#define LPC_SPI_SPI1_IRQ_PRIORITY 2
++
++#define LPC_UART_USE_UART1 FALSE
++#define LPC_UART_UART1_IRQ_PRIORITY 1
++#define LPC_SERIAL_USE_UART1 FALSE
+diff --git a/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.c b/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.c
+new file mode 100644
+index 00000000..9e5493d4
+--- /dev/null
++++ b/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.c
+@@ -0,0 +1,150 @@
++// Copyright 2026 Michael Loukeris (@milouk)
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++// On-chip EEPROM of the LPC11U2x/3x, through the ROM's IAP calls.
++// Only the EEPROM commands are issued here, so this cannot alter flash.
++
++#include <string.h>
++#include "ch.h"
++#include "hal.h"
++#include "eeprom_driver.h"
++#include "eeprom_lpc11uxx.h"
++
++#define IAP_ENTRY 0x1FFF1FF1U
++#define IAP_CMD_EEPROM_WRITE 61U
++#define IAP_CMD_EEPROM_READ 62U
++#define IAP_CMD_SUCCESS 0U
++
++#define EEPROM_PAGE_SIZE 64U
++
++// Interrupts are off for the whole of each IAP call (UM10462 20.8.7), about 3 ms for
++// a write. QMK writes its defaults a byte at a time, and several hundred such calls in
++// a row keep USB from enumerating. Sequential writes are therefore collected and sent
++// a page at a time, at the latest FLUSH_DELAY after the last one. Reads see the
++// collected bytes, so read-before-write updates do not force a write per byte.
++#define FLUSH_DELAY TIME_MS2I(10)
++
++typedef void (*iap_entry_t)(uint32_t[], uint32_t[]);
++
++static uint8_t         pending[EEPROM_PAGE_SIZE];
++static uint32_t        pending_addr;
++static uint8_t         pending_len;
++static virtual_timer_t flush_timer;
++
++// Call with the system locked.
++static bool iap_eeprom(uint32_t command_code, uint32_t ee_addr, uint8_t *ram, uint32_t len) {
++    uint32_t command[5] = {command_code, ee_addr, (uint32_t)ram, len, CPU_CLOCK / 1000U};
++    uint32_t result[4]  = {~IAP_CMD_SUCCESS, 0, 0, 0};
++
++    ((iap_entry_t)IAP_ENTRY)(command, result);
++
++    return result[0] == IAP_CMD_SUCCESS;
++}
++
++// Call with the system locked.
++static void flush_pending(void) {
++    if (pending_len > 0) {
++        iap_eeprom(IAP_CMD_EEPROM_WRITE, pending_addr, pending, pending_len);
++        pending_len = 0;
++    }
++}
++
++static void flush_timer_cb(virtual_timer_t *vtp, void *arg) {
++    (void)vtp;
++    (void)arg;
++
++    chSysLockFromISR();
++    flush_pending();
++    chSysUnlockFromISR();
++}
++
++static size_t clamp_length(uintptr_t offset, size_t len) {
++    if (offset >= LPC11UXX_EEPROM_SIZE) {
++        return 0;
++    }
++    if (len > LPC11UXX_EEPROM_SIZE - offset) {
++        len = LPC11UXX_EEPROM_SIZE - offset;
++    }
++    return len;
++}
++
++void eeprom_driver_init(void) {
++    chVTObjectInit(&flush_timer);
++}
++
++void eeprom_driver_erase(void) {
++    uint8_t blank[EEPROM_PAGE_SIZE];
++    memset(blank, 0xFF, sizeof(blank));
++
++    for (uint32_t addr = 0; addr < LPC11UXX_EEPROM_SIZE; addr += EEPROM_PAGE_SIZE) {
++        uint32_t len = LPC11UXX_EEPROM_SIZE - addr < EEPROM_PAGE_SIZE ? LPC11UXX_EEPROM_SIZE - addr : EEPROM_PAGE_SIZE;
++
++        syssts_t sts = chSysGetStatusAndLockX();
++        if (addr == 0) {
++            pending_len = 0;
++        }
++        iap_eeprom(IAP_CMD_EEPROM_WRITE, addr, blank, len);
++        chSysRestoreStatusX(sts);
++    }
++}
++
++void eeprom_read_block(void *buf, const void *addr, size_t len) {
++    uintptr_t offset = (uintptr_t)addr;
++    size_t    usable = clamp_length(offset, len);
++
++    // Bytes outside the EEPROM, or a failed read, come back as erased.
++    memset(buf, 0xFF, len);
++    if (usable > 0) {
++        syssts_t sts = chSysGetStatusAndLockX();
++        bool     ok  = iap_eeprom(IAP_CMD_EEPROM_READ, offset, buf, usable);
++
++        // Bytes still waiting to be written take precedence over what is stored.
++        uint32_t start = offset > pending_addr ? offset : pending_addr;
++        uint32_t end   = offset + usable < pending_addr + pending_len ? offset + usable : pending_addr + pending_len;
++        if (ok && start < end) {
++            memcpy((uint8_t *)buf + (start - offset), &pending[start - pending_addr], end - start);
++        }
++        chSysRestoreStatusX(sts);
++
++        if (!ok) {
++            memset(buf, 0xFF, len);
++        }
++    }
++}
++
++void eeprom_write_block(const void *buf, void *addr, size_t len) {
++    uintptr_t      offset = (uintptr_t)addr;
++    const uint8_t *src    = buf;
++
++    len = clamp_length(offset, len);
++    if (len == 0) {
++        return;
++    }
++
++    while (len > 0) {
++        syssts_t sts = chSysGetStatusAndLockX();
++
++        // Start a new run when this byte does not follow the pending ones, or opens a new page.
++        if (pending_len > 0 && (offset != pending_addr + pending_len || offset % EEPROM_PAGE_SIZE == 0)) {
++            flush_pending();
++        }
++        if (pending_len == 0) {
++            pending_addr = offset;
++        }
++
++        size_t chunk = EEPROM_PAGE_SIZE - (offset % EEPROM_PAGE_SIZE);
++        if (chunk > len) {
++            chunk = len;
++        }
++        memcpy(&pending[pending_len], src, chunk);
++        pending_len += chunk;
++
++        chSysRestoreStatusX(sts);
++
++        offset += chunk;
++        src += chunk;
++        len -= chunk;
++    }
++
++    chVTSet(&flush_timer, FLUSH_DELAY, flush_timer_cb, NULL);
++}
+diff --git a/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.h b/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.h
+new file mode 100644
+index 00000000..be130249
+--- /dev/null
++++ b/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.h
+@@ -0,0 +1,16 @@
++// Copyright 2026 Michael Loukeris (@milouk)
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#pragma once
++
++/*
++    The size of the EEPROM area handed to QMK, in bytes.
++    The LPC11U35 has 4 kB of EEPROM, of which the top 64 bytes are reserved by the ROM.
++*/
++#ifndef LPC11UXX_EEPROM_SIZE
++#    define LPC11UXX_EEPROM_SIZE 1024
++#endif
++
++#if LPC11UXX_EEPROM_SIZE > (4096 - 64)
++#    error LPC11UXX_EEPROM_SIZE is larger than the usable on-chip EEPROM
++#endif
+diff --git a/platforms/chibios/mcu_selection.mk b/platforms/chibios/mcu_selection.mk
+index 199bdb23..3f59fe90 100644
+--- a/platforms/chibios/mcu_selection.mk
++++ b/platforms/chibios/mcu_selection.mk
+@@ -776,6 +776,37 @@ ifneq (,$(filter $(MCU),STM32H723 STM32H733))
+   STM32_BOOTLOADER_ADDRESS ?= 0x1FF09800
+ endif
+ 
++ifneq ($(findstring LPC11U35, $(MCU)),)
++  # Cortex version
++  MCU = cortex-m0
++
++  # ARM version, CORTEX-M0/M1 are 6, CORTEX-M3/M4/M7 are 7
++  ARMV = 6
++
++  ## chip/board settings
++  # - the next two should match the directories in
++  #   <chibios[-contrib]>/os/hal/ports/$(MCU_PORT_NAME)/$(MCU_SERIES)
++  #   OR
++  #   <chibios[-contrib]>/os/hal/ports/$(MCU_FAMILY)/$(MCU_SERIES)
++  MCU_FAMILY = LPC
++  MCU_SERIES = LPC11Uxx
++
++  # Linker script to use
++  # - it should exist either in <chibios>/os/common/ports/ARMCMx/compilers/GCC/ld/
++  #   or <keyboard_dir>/ld/
++  MCU_LDSCRIPT ?= LPC11U35_401
++
++  # Startup code to use
++  #  - it should exist in <chibios>/os/common/startup/ARMCMx/compilers/GCC/mk/
++  MCU_STARTUP ?= lpc11uxx
++
++  # Board: it should exist either in <chibios>/os/hal/boards/,
++  # <keyboard_dir>/boards/, or drivers/boards/
++  BOARD ?= GENERIC_LPC_11U35
++
++  USE_FPU ?= no
++endif
++
+ ifneq ($(findstring WB32F3G71, $(MCU)),)
+   # Cortex version
+   MCU = cortex-m3
+diff --git a/platforms/eeprom.h b/platforms/eeprom.h
+index 557bfb03..201ec1af 100644
+--- a/platforms/eeprom.h
++++ b/platforms/eeprom.h
+@@ -51,6 +51,9 @@ void     eeprom_update_block(const void *__src, void *__dst, size_t __n);
+ #elif defined(EEPROM_STM32_L0_L1)
+ #    include "eeprom_stm32_L0_L1.h"
+ #    define TOTAL_EEPROM_BYTE_COUNT (STM32_ONBOARD_EEPROM_SIZE)
++#elif defined(EEPROM_LPC11UXX)
++#    include "eeprom_lpc11uxx.h"
++#    define TOTAL_EEPROM_BYTE_COUNT (LPC11UXX_EEPROM_SIZE)
+ #elif defined(EEPROM_KINETIS_FLEXRAM)
+ #    include "eeprom_kinetis_flexram.h"
+ #    define TOTAL_EEPROM_BYTE_COUNT (EEPROM_SIZE)
+
+From 1f278faf5aae0bcf305510e36142c5f64de771a9 Mon Sep 17 00:00:00 2001
+From: Michael Loukeris <loukerismichalis@gmail.com>
+Date: Wed, 14 Oct 2026 09:18:07 +0300
+Subject: [PATCH 2/2] Keep the IAP RAM free and add an EEPROM flush for
+ LPC11U35
+
+---
+ .../chibios/boards/common/ld/LPC11U35_401.ld  | 104 ++++++++++++++++++
+ .../chibios/drivers/eeprom/eeprom_lpc11uxx.c  |  12 +-
+ .../chibios/drivers/eeprom/eeprom_lpc11uxx.h  |   3 +
+ 3 files changed, 118 insertions(+), 1 deletion(-)
+ create mode 100644 platforms/chibios/boards/common/ld/LPC11U35_401.ld
+
+diff --git a/platforms/chibios/boards/common/ld/LPC11U35_401.ld b/platforms/chibios/boards/common/ld/LPC11U35_401.ld
+new file mode 100644
+index 00000000..3959c156
+--- /dev/null
++++ b/platforms/chibios/boards/common/ld/LPC11U35_401.ld
+@@ -0,0 +1,104 @@
++/*
++ * Copyright (C) 2020 Yaotian Feng / Codetector
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining
++ * a copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
++ * and/or sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
++ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++ * SOFTWARE.
++ */
++
++
++/*
++ * LPC11U35_401 memory setup
++ */
++
++
++
++MEMORY {
++    flash0  : org = 0x00000000, len = 64k
++    flash1  : org = 0x00000000, len = 0
++    flash2  : org = 0x00000000, len = 0
++    flash3  : org = 0x00000000, len = 0
++    flash4  : org = 0x00000000, len = 0
++    flash5  : org = 0x00000000, len = 0
++    flash6  : org = 0x00000000, len = 0
++    flash7  : org = 0x00000000, len = 0
++    ram0    : org = 0x10000200, len = 7648   /* the top 32 bytes are used by the ROM IAP calls */
++    ram1    : org = 0x00000000, len = 0
++    ram2    : org = 0x00000000, len = 0
++    ram3    : org = 0x00000000, len = 0
++    ram4    : org = 0x00000000, len = 0
++    ram5    : org = 0x00000000, len = 0
++    ram6    : org = 0x00000000, len = 0
++    ram7    : org = 0x00000000, len = 0
++}
++
++/* For each data/text section two region are defined, a virtual region
++   and a load region (_LMA suffix).*/
++
++/* Flash region to be used for exception vectors.*/
++REGION_ALIAS("VECTORS_FLASH", flash0);
++REGION_ALIAS("VECTORS_FLASH_LMA", flash0);
++
++/* Flash region to be used for constructors and destructors.*/
++REGION_ALIAS("XTORS_FLASH", flash0);
++REGION_ALIAS("XTORS_FLASH_LMA", flash0);
++
++/* Flash region to be used for code text.*/
++REGION_ALIAS("TEXT_FLASH", flash0);
++REGION_ALIAS("TEXT_FLASH_LMA", flash0);
++
++/* Flash region to be used for read only data.*/
++REGION_ALIAS("RODATA_FLASH", flash0);
++REGION_ALIAS("RODATA_FLASH_LMA", flash0);
++
++/* Flash region to be used for various.*/
++REGION_ALIAS("VARIOUS_FLASH", flash0);
++REGION_ALIAS("VARIOUS_FLASH_LMA", flash0);
++
++/* Flash region to be used for RAM(n) initialization data.*/
++REGION_ALIAS("RAM_INIT_FLASH_LMA", flash0);
++
++/* RAM region to be used for Main stack. This stack accommodates the processing
++   of all exceptions and interrupts.*/
++REGION_ALIAS("MAIN_STACK_RAM", ram0);
++
++/* RAM region to be used for the process stack. This is the stack used by
++   the main() function.*/
++REGION_ALIAS("PROCESS_STACK_RAM", ram0);
++
++/* RAM region to be used for data segment.*/
++REGION_ALIAS("DATA_RAM", ram0);
++REGION_ALIAS("DATA_RAM_LMA", flash0);
++
++/* RAM region to be used for BSS segment.*/
++REGION_ALIAS("BSS_RAM", ram0);
++
++/* RAM region to be used for the default heap.*/
++REGION_ALIAS("HEAP_RAM", ram0);
++
++Vector1C = (0 -
++        ((__main_stack_end__) +
++        (Reset_Handler + 1) +
++        (NMI_Handler + 1) +
++        (HardFault_Handler + 1) +
++        (MemManage_Handler + 1) +
++        (BusFault_Handler + 1) +
++        (UsageFault_Handler + 1))
++    );
++
++/* Generic rules inclusion.*/
++INCLUDE rules.ld
+diff --git a/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.c b/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.c
+index 9e5493d4..0107f7f0 100644
+--- a/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.c
++++ b/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.c
+@@ -22,6 +22,7 @@
+ // a row keep USB from enumerating. Sequential writes are therefore collected and sent
+ // a page at a time, at the latest FLUSH_DELAY after the last one. Reads see the
+ // collected bytes, so read-before-write updates do not force a write per byte.
++// Call eeprom_lpc11uxx_flush() before a reset to write out anything still pending.
+ #define FLUSH_DELAY TIME_MS2I(10)
+ 
+ typedef void (*iap_entry_t)(uint32_t[], uint32_t[]);
+@@ -146,5 +147,14 @@ void eeprom_write_block(const void *buf, void *addr, size_t len) {
+         len -= chunk;
+     }
+ 
+-    chVTSet(&flush_timer, FLUSH_DELAY, flush_timer_cb, NULL);
++    syssts_t sts = chSysGetStatusAndLockX();
++    chVTSetI(&flush_timer, FLUSH_DELAY, flush_timer_cb, NULL);
++    chSysRestoreStatusX(sts);
++}
++
++void eeprom_lpc11uxx_flush(void) {
++    syssts_t sts = chSysGetStatusAndLockX();
++    chVTResetI(&flush_timer);
++    flush_pending();
++    chSysRestoreStatusX(sts);
+ }
+diff --git a/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.h b/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.h
+index be130249..1ab70632 100644
+--- a/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.h
++++ b/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.h
+@@ -14,3 +14,6 @@
+ #if LPC11UXX_EEPROM_SIZE > (4096 - 64)
+ #    error LPC11UXX_EEPROM_SIZE is larger than the usable on-chip EEPROM
+ #endif
++
++// Writes out any bytes still waiting to be written. Call before a reset.
++void eeprom_lpc11uxx_flush(void);

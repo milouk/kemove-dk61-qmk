@@ -23,17 +23,16 @@ The PCB revision is printed on the board. v1.4 shares the v1.5 pin layout but is
 | USB typing, stock layout | Working |
 | Updates over USB, no disassembly | Working |
 | Fn layer, lighting, Bluetooth, battery | Built, not yet tested |
-| Saved settings (on-chip EEPROM), VIA keymap editing | Working |
+| Saved settings (keymap, lighting), VIA keymap editing | Working |
 | Lighting speed/colour keys, profiles, Fn lock, factory reset, battery display, VIA lighting control | Missing |
 
 Kemove's APEX software does not talk to QMK.
 
 ## What is in here
 
-- `qmk/keymaps/stock/` — stock layout and Fn shortcuts, from Kemove's K61 manual. Fn+B enters the bootloader.
-- `qmk/keymaps/via/` — the same keymap with VIA enabled.
-- `qmk/via/` — VIA definition; load it in VIA's Design tab.
-- `qmk/patches/` — changes to the upstream QMK fork and to the bootloader.
+- `qmk/keyboards/kemove/snowfox/` — the keyboard, for current QMK. The `default` keymap is the stock layout and Fn shortcuts from Kemove's K61 manual, `via` is the same with VIA enabled. Fn+B enters the bootloader.
+- `qmk/via/` — VIA definition. Load it in VIA's Design tab.
+- `qmk/patches/` — LPC11U35 support for QMK, USB driver fixes for ChibiOS-Contrib, and a bootloader build fix.
 - `tools/sfdfu.py` — firmware updater for the OpenKemove bootloader. `dfu-util` fails with it on macOS.
 - `tools/analysis/` — scripts used to unpack Kemove's installers and inspect firmware images.
 - `docs/hardware-notes.md` — what was verified about the hardware, and how.
@@ -46,12 +45,12 @@ Needs `arm-none-eabi-gcc` and the QMK CLI.
 
 ```sh
 # QMK
-git clone --recursive https://github.com/thedelog/Kemove-Snowfox-Media_keys_on_BLE.git qmk_firmware
+git clone --recursive -b develop https://github.com/qmk/qmk_firmware.git
 cd qmk_firmware
-git apply ../qmk/patches/000*.patch
+git am ../qmk/patches/qmk-lpc11u35-support.patch
 git -C lib/chibios-contrib apply ../../../qmk/patches/chibios-contrib-lpc11uxx-usb-fixes.patch
-cp -r ../qmk/keymaps/* keyboards/kemove/snowfox/keymaps/
-make kemove/snowfox/v1_5:stock   # or :via
+cp -r ../qmk/keyboards/kemove keyboards/
+make kemove/snowfox/v1_5:default   # or :via
 
 # Bootloader
 git clone --recursive https://github.com/OpenKemove/kemove_lpc_dfu.git
@@ -59,6 +58,8 @@ cd kemove_lpc_dfu
 git apply ../qmk/patches/kemove_lpc_dfu-static-inline.patch
 make V1_5 USE_OPT="-Os -g -fomit-frame-pointer -falign-functions=16"
 ```
+
+The two patches are open upstream as [qmk_firmware#26517](https://github.com/qmk/qmk_firmware/pull/26517) and [ChibiOS-Contrib#456](https://github.com/ChibiOS/ChibiOS-Contrib/pull/456).
 
 The bootloader must be 8192 bytes or smaller. Built at the default `-O2` with a current GCC it is not.
 
@@ -94,7 +95,7 @@ Repeat step 2 of the install and write your backup with the same `dd` command.
 
 - [OpenKemove](https://openkemove.github.io/) — the LPC11Uxx QMK port and DFU bootloader.
 - [hftsai256](https://github.com/hftsai256/openkemove_qmk_firmware) — v1.4/v1.5 support and three Bluetooth devices.
-- [thedelog](https://github.com/thedelog/Kemove-Snowfox-Media_keys_on_BLE) — media keys over Bluetooth; the tree this builds on.
+- [thedelog](https://github.com/thedelog/Kemove-Snowfox-Media_keys_on_BLE) — media keys over Bluetooth, and the tree this was ported from.
 - The OpenKemove Discord, for the `TP3` tip.
 
 ## License
