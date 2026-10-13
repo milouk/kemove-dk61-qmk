@@ -1,0 +1,9 @@
+# Large or third-party working material: toolchain, clones, downloads, emulator, build output
+/work/
+
+# Kemove's proprietary firmware (stock images and the full-chip backup). Keep locally, never publish.
+/firmware/
+
+__pycache__/
+*.pyc
+.DS_Store

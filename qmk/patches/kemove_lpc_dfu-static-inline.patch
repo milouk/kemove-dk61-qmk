@@ -1,0 +1,13 @@
+diff --git a/main.c b/main.c
+index 015dc7b..ef8b585 100644
+--- a/main.c
++++ b/main.c
+@@ -43,7 +43,7 @@ static void jump_to_application(void) {
+   while (1);
+ }
+ 
+-inline bool is_dfu_pressed(void) {
++static inline bool is_dfu_pressed(void) {
+   #ifdef SNOWFOX_TST
+     return !palReadLine(LINE_BTN1);
+   #else
