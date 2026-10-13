@@ -67,11 +67,24 @@ Flashed and running on this board.
   - `raw_hid_send()` waited forever for the host to collect a reply. One stuck reply froze the main loop: no keys, no Fn+B. It now gives up after 50 ms.
   - The LPC USB driver set STALL on an OUT endpoint after every completed transfer. Back-to-back requests then failed on the host and were lost. A finished endpoint is now left idle.
   - The driver declared five endpoints besides EP0; the LPC11Uxx has four. A fifth endpoint (console IN plus OUT alongside raw HID) wrote past the driver's buffer table.
+- LED driver set-up in Kemove's firmware (function page): picture display `0x08`, staggered delay `0xE4`, slew rate `0x01`, VAF `0x44`/`0x44`, constant current `0x99` (20.5 mA). The current is also settable by a host command. The chips' power-on current setting is dim and flickers. This port uses the same values except that it leaves staggered delay off.
 - The Bluetooth status blink is done by the SLED1734x itself, so it carries on when the MCU is hung. It is not a sign the firmware is alive.
 - With the battery connected, the Esc-at-plug-in bootloader entry only works if the chip really loses power. Fn+B does not have that limit.
 - VIA's bootloader-jump command is refused by this firmware.
 - The bootloader erases the whole application area when the status request after the first download block arrives, and it is deaf while that runs. A status request sent during the erase leaves it unresponsive to DFU requests until a power cycle.
 - The bootloader's 1 kB write buffer is not cleared by a DFU abort. After any abandoned download, power-cycle it before trying again, or the next write is rejected.
+
+## Open: lighting buzz
+
+To revisit. With the lights on, the board makes an audible buzz from the bottom left of the PCB. Measured by ear on a tuning build, changing one driver setting at a time:
+
+- Dimming by PWM is the loud part. At the same current, 74% PWM is audibly buzzier than 100%. Mixed colours buzz more than pure ones for the same reason, and the sound changes as the colour cycle runs.
+- Higher constant current is louder, but less so than PWM chopping. 8 mA at full PWM is the quietest lit state; 10 mA is close to as bright as 20.5 mA and clearly quieter.
+- No effect: staggered delay, display option (blink and frame bits), chip sync, slew rate, sending frame data only when it changes. Turning the VAF (anti-ghosting) settings off changes the tone only.
+- Each driver chip buzzes on its own. Chip 0 drives the left and upper part, chip 1 the right side and the bottom row.
+- Kemove's firmware uses the same chip settings, so it probably buzzes too at full brightness on mixed colours; not verified.
+
+Tried and set aside: brightness by drive current at full PWM, a palette of the seven colours that need no PWM, a stepped colour cycle, and nudging each LED's PWM value so partly lit LEDs do not all switch together. None was judged good enough to keep. Other boards with the same symptom settle for a brightness cap, pure colours, or a PWM-frequency or spread-spectrum setting that this chip does not appear to have. Damping the component at the bottom left is the untried hardware option.
 
 ## Sonix generations (not this board)
 
