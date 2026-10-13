@@ -65,6 +65,12 @@ class Bootloader:
         total = len(image)
         for n, off in enumerate(range(0, total, self.block)):
             self.dev.ctrl_transfer(OUT, DFU_DNLOAD, n, 0, image[off:off + self.block], timeout=5000)
+            if n == 0:
+                # The status request after the first block starts the erase of the whole
+                # application area. The bootloader is deaf while that runs; asking again
+                # too early has left it unresponsive until a power cycle.
+                self.status()
+                time.sleep(0.5)
             self.wait_for(DNLOAD_IDLE)
             print('\rwriting  %5d / %d bytes' % (min(off + self.block, total), total), end='', flush=True)
         print()

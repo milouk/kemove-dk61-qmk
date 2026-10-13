@@ -70,6 +70,8 @@ Flashed and running on this board.
 - The Bluetooth status blink is done by the SLED1734x itself, so it carries on when the MCU is hung. It is not a sign the firmware is alive.
 - With the battery connected, the Esc-at-plug-in bootloader entry only works if the chip really loses power. Fn+B does not have that limit.
 - VIA's bootloader-jump command is refused by this firmware.
+- The bootloader erases the whole application area when the status request after the first download block arrives, and it is deaf while that runs. A status request sent during the erase leaves it unresponsive to DFU requests until a power cycle.
+- The bootloader's 1 kB write buffer is not cleared by a DFU abort. After any abandoned download, power-cycle it before trying again, or the next write is rejected.
 
 ## Sonix generations (not this board)
 
