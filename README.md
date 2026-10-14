@@ -20,11 +20,14 @@ The PCB revision is printed on the board. v1.4 shares the v1.5 pin layout but is
 
 | | |
 | --- | --- |
-| USB typing, stock layout, Fn layer, media keys | Tested |
+| USB typing, NKRO, stock layout and Fn layer | Tested |
 | Updates over USB, no disassembly | Tested |
 | Saved settings, VIA keymap editing | Tested |
-| Bluetooth pairing, typing, reconnect at power up | Tested on one host |
-| RGB lighting, profiles, Fn and Win lock, battery level, sleep on battery, factory reset, VIA Kemove page, automatic Windows/Mac layout, reconnect after a drop, NKRO | Built, being tested |
+| Bluetooth: pairing, typing, media keys, reconnect at power up and after a drop | Tested |
+| RGB lighting and effects, profiles, Fn and Win lock, factory reset | Tested |
+| Battery level, lights off on battery after idle | Tested |
+| Automatic Windows/Mac layout | Tested on macOS |
+| VIA Kemove page | Built, not yet tried in the VIA app |
 
 Every key, indicator and setting is described in the [keyboard readme](qmk/keyboards/kemove/snowfox/readme.md). Kemove's APEX software does not talk to QMK; VIA replaces it.
 

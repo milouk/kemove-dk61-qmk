@@ -63,8 +63,8 @@ QMK's RGB Matrix effects, plus a typing speed effect that goes from dim blue to 
 | Indicator | Meaning |
 | --- | --- |
 | Caps Lock red | Caps Lock on |
-| Win key blinking red | Win key locked |
-| Space bar blinking red | F keys locked |
+| Win/Cmd keys blinking red | Win lock on: those keys are disabled |
+| Fn key blinking red | Fn lock on: F1 to F12 on the number row |
 | Z, X or C blinking cyan | Pairing that host |
 | Z, X or C blinking purple | Reconnecting to that host |
 | Z, X or C blue for 3 seconds | Connected |
@@ -89,6 +89,7 @@ The VIA keymap adds a Kemove page:
 | Lights off on battery after | Off, 1, 3, 5 or 10 minutes |
 | Bluetooth | Status, connect or pair host 1 to 3, disconnect |
 | Profile | 0 to 4 |
+| Reset current profile | Default lighting, and no key changes on profiles 1 to 4 |
 | Back switch | Windows or Mac layout, or automatic with the switch locking the Win key or the F keys |
 | Enter update mode | Bootloader |
 | Reset all settings | Factory reset |

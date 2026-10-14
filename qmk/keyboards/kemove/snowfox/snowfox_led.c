@@ -47,8 +47,7 @@ const rgb_matrix_driver_t rgb_matrix_driver = {
 };
 
 #define LED_CAPS_LOCK 28
-#define LED_WIN 54
-#define LED_SPACE 56
+#define LED_FN 60
 static const uint8_t led_ble_slot[BLE_KEYBOARD_SIZE] = {42, 43, 44}; // Z, X, C
 
 #define BLINK_MS 250
@@ -72,6 +71,40 @@ static uint16_t       flash_from;
 static bool           flash_pending;
 static bool           show_battery;
 static uint8_t        fn_keys[(RGB_MATRIX_LED_COUNT + 7) / 8];
+static uint8_t        gui_keys[(RGB_MATRIX_LED_COUNT + 7) / 8];
+
+// Marks the keys that send Win/Cmd with the active base layout and profile, Fn
+// aside, so Win lock blinks the keys it actually disables. Worked out again only
+// when the active layers change.
+static void update_gui_keys(void) {
+    static layer_state_t done = (layer_state_t)~0;
+    layer_state_t        active = (layer_state | default_layer_state) & ~((layer_state_t)1 << SF_LAYER_FN);
+    if (active == done) {
+        return;
+    }
+    done = active;
+    memset(gui_keys, 0, sizeof(gui_keys));
+    for (uint8_t row = 0; row < MATRIX_ROWS; row++) {
+        for (uint8_t col = 0; col < MATRIX_COLS; col++) {
+            uint8_t led = g_led_config.matrix_co[row][col];
+            if (led == NO_LED) {
+                continue;
+            }
+            for (int8_t layer = MAX_LAYER - 1; layer >= 0; layer--) {
+                if (!(active & ((layer_state_t)1 << layer))) {
+                    continue;
+                }
+                uint16_t keycode = keymap_key_to_keycode(layer, (keypos_t){.row = row, .col = col});
+                if (keycode != KC_TRNS) {
+                    if (keycode == KC_LGUI || keycode == KC_RGUI) {
+                        gui_keys[led / 8] |= 1 << (led % 8);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
 
 // Reads the Fn layer from the keymap (with VIA, from EEPROM) once per Fn press.
 layer_state_t layer_state_set_kb(layer_state_t state) {
@@ -91,6 +124,7 @@ layer_state_t layer_state_set_kb(layer_state_t state) {
     fn_was_on = fn_on;
     return layer_state_set_user(state);
 }
+static bool           ble_show_connected;
 static ble_state_t    ble_state = STANDBY;
 static ble_keyboard_t ble_slot  = BLE_KEYBOARD1;
 static uint16_t       ble_changed_at;
@@ -105,10 +139,15 @@ void snowfox_led_show_battery(bool show) {
     show_battery = show;
 }
 
+// The indicators follow state changes only. The module can repeat an event for a
+// state it is already in, which would otherwise restart the 3 s connected blue.
 bool ble_update_kb(ble_handle_t *ble_handle) {
-    ble_state      = ble_handle->state;
-    ble_slot       = ble_handle->keyboard;
-    ble_changed_at = timer_read();
+    if (ble_handle->state != ble_state || ble_handle->keyboard != ble_slot) {
+        ble_changed_at     = timer_read();
+        ble_show_connected = ble_handle->state == CONNECTED;
+    }
+    ble_state = ble_handle->state;
+    ble_slot  = ble_handle->keyboard;
     return true;
 }
 
@@ -128,13 +167,29 @@ static bool draw_indicators(uint8_t led_min, uint8_t led_max) {
         flash_pending = false;
     }
 
-    // While Fn is held, only the keys that do something on the Fn layer stay lit.
+    // While Fn is held, only the keys that do something on the Fn layer stay lit:
+    // in the current effect, so lighting changes show, or white with lighting off.
     if (layer_state_is(SF_LAYER_FN)) {
+        bool effect = rgb_matrix_is_enabled();
         for (uint8_t i = led_min; i < led_max; i++) {
-            if (fn_keys[i / 8] & (1 << (i % 8))) {
-                rgb_matrix_set_color(i, 255, 255, 255);
-            } else {
+            bool fn_key = fn_keys[i / 8] & (1 << (i % 8));
+            if (!fn_key) {
                 rgb_matrix_set_color(i, 0, 0, 0);
+            } else if (!effect) {
+                rgb_matrix_set_color(i, 255, 255, 255);
+            }
+        }
+        shown = true;
+    }
+
+    // Holding the reset keys fills the number row in red over the 3 seconds.
+    uint8_t reset = snowfox_factory_reset_progress();
+    if (reset > 0) {
+        for (uint8_t i = 0; i < 10; i++) {
+            if (i * 10 < reset) {
+                RGB_MATRIX_INDICATOR_SET_COLOR(LED_NUMBER_ROW + i, 255, 0, 0);
+            } else {
+                RGB_MATRIX_INDICATOR_SET_COLOR(LED_NUMBER_ROW + i, 0, 0, 0);
             }
         }
         shown = true;
@@ -156,13 +211,18 @@ static bool draw_indicators(uint8_t led_min, uint8_t led_max) {
         shown = true;
     }
 
-    // Win lock blinks the Win key red, Fn lock the space bar, as the stock firmware.
+    // Win lock blinks the keys it disables, Fn lock the Fn key, in red.
     if (keymap_config.no_gui) {
-        RGB_MATRIX_INDICATOR_SET_COLOR(LED_WIN, blink ? 255 : 0, 0, 0);
+        update_gui_keys();
+        for (uint8_t i = led_min; i < led_max; i++) {
+            if (gui_keys[i / 8] & (1 << (i % 8))) {
+                rgb_matrix_set_color(i, blink ? 255 : 0, 0, 0);
+            }
+        }
         shown = true;
     }
     if (layer_state_is(SF_LAYER_FN_LOCK)) {
-        RGB_MATRIX_INDICATOR_SET_COLOR(LED_SPACE, blink ? 255 : 0, 0, 0);
+        RGB_MATRIX_INDICATOR_SET_COLOR(LED_FN, blink ? 255 : 0, 0, 0);
         shown = true;
     }
 
@@ -183,9 +243,12 @@ static bool draw_indicators(uint8_t led_min, uint8_t led_max) {
                 shown = true;
                 break;
             case CONNECTED:
-                if (timer_elapsed(ble_changed_at) < BLE_CONNECTED_SHOW_MS) {
+                // Shown once per connection. A 16-bit timestamp would come round again every 65 s.
+                if (ble_show_connected && timer_elapsed(ble_changed_at) < BLE_CONNECTED_SHOW_MS) {
                     RGB_MATRIX_INDICATOR_SET_COLOR(led, 0, 255, 255);
                     shown = true;
+                } else {
+                    ble_show_connected = false;
                 }
                 break;
             default:

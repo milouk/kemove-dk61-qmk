@@ -59,3 +59,4 @@ uint8_t snowfox_profile(void);
 uint8_t snowfox_switch_mode(void);
 void    snowfox_set_switch_mode(uint8_t mode);
 void    snowfox_profile_select(uint8_t profile);
+void    snowfox_profile_reset(void);

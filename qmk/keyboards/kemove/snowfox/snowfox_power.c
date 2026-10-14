@@ -3,8 +3,10 @@
 
 // Battery level, sleep on battery and the factory reset key.
 
+#include <string.h>
 #include "snowfox.h"
 #include "snowfox_power.h"
+#include "snowfox_ble.h"
 #include "sled17341.h"
 #include "usb_util.h"
 
@@ -26,13 +28,20 @@ static const uint8_t sleep_minutes[SNOWFOX_SLEEP_SETTINGS] = {3, 0, 1, 5, 10};
 #define IDLE_AFTER_MS 500
 #define IDLE_PAUSE_MS 1
 
+#ifdef SNOWFOX_TEST
 static bool     force_battery;
 static uint16_t scan_rate;
+#endif
 static uint16_t battery_raw;
 static bool     asleep;
 static bool     lights_were_on;
 static bool     reset_held;
 static uint16_t reset_pressed_at;
+
+#ifdef SNOWFOX_TEST
+uint16_t snowfox_battery_log[32];
+uint8_t  snowfox_battery_log_next;
+#endif
 
 static uint16_t battery_read_raw(void) {
     LPC_SYSCON->PDRUNCFG &= ~SYSCON_PDRUNCFG_ADC_PD;
@@ -51,9 +60,15 @@ static uint16_t battery_read_raw(void) {
 }
 
 bool snowfox_on_battery(void) {
-    return force_battery || !usb_connected_state();
+#ifdef SNOWFOX_TEST
+    if (force_battery) {
+        return true;
+    }
+#endif
+    return !usb_connected_state();
 }
 
+#ifdef SNOWFOX_TEST
 void snowfox_power_force_battery(bool on) {
     force_battery = on;
 }
@@ -72,9 +87,20 @@ static void scan_rate_task(void) {
         since     = timer_read();
     }
 }
+#endif
 
+static bool any_key_down(void) {
+    for (uint8_t row = 0; row < MATRIX_ROWS; row++) {
+        if (matrix_get_row(row)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// A held key counts as activity too, so other keys pressed meanwhile are scanned at full speed.
 static void idle_task(void) {
-    if (snowfox_on_battery() && last_input_activity_elapsed() > IDLE_AFTER_MS) {
+    if (snowfox_on_battery() && last_input_activity_elapsed() > IDLE_AFTER_MS && !any_key_down()) {
         chThdSleepMilliseconds(IDLE_PAUSE_MS);
     }
 }
@@ -83,19 +109,39 @@ uint16_t snowfox_battery_raw(void) {
     return battery_raw;
 }
 
+// The lights pull the voltage down while they draw current, so a single reading
+// can look several percent low. The level is the highest reading of the last
+// minute, which is the closest to the battery's resting voltage.
+#define BATTERY_RECENT 6
+
+static uint16_t battery_recent[BATTERY_RECENT];
+
 uint8_t snowfox_battery_percent(void) {
-    if (battery_raw <= BATTERY_RAW_EMPTY) {
+    uint16_t level = 0;
+    for (uint8_t i = 0; i < BATTERY_RECENT; i++) {
+        if (battery_recent[i] > level) {
+            level = battery_recent[i];
+        }
+    }
+    if (level <= BATTERY_RAW_EMPTY) {
         return 0;
     }
-    if (battery_raw >= BATTERY_RAW_FULL) {
+    if (level >= BATTERY_RAW_FULL) {
         return 100;
     }
-    return (uint32_t)(battery_raw - BATTERY_RAW_EMPTY) * 100 / (BATTERY_RAW_FULL - BATTERY_RAW_EMPTY);
+    return (uint32_t)(level - BATTERY_RAW_EMPTY) * 100 / (BATTERY_RAW_FULL - BATTERY_RAW_EMPTY);
 }
 
 static void battery_task(void) {
     static uint16_t last;
     if (battery_raw != 0 && timer_elapsed(last) < BATTERY_SAMPLE_MS) {
+        return;
+    }
+    // The radio draws bursts of current while it connects or pairs, which pulls
+    // the reading down. Try again a second later.
+    ble_state_t ble = snowfox_ble_handle()->state;
+    if (battery_raw != 0 && (ble == CONNECTING || ble == DISCOVERING)) {
+        last = timer_read() - BATTERY_SAMPLE_MS + 1000;
         return;
     }
     last = timer_read();
@@ -105,7 +151,23 @@ static void battery_task(void) {
         sum += battery_read_raw();
     }
     battery_raw = sum / 8;
+
+    // On USB the charger lifts the voltage, so readings from before an unplug
+    // would hide the battery's real level for a minute.
+    static bool    was_on_battery;
+    static uint8_t next;
+    bool           on_battery = snowfox_on_battery();
+    if (on_battery != was_on_battery) {
+        memset(battery_recent, 0, sizeof(battery_recent));
+        was_on_battery = on_battery;
+    }
+    battery_recent[next++ % BATTERY_RECENT] = battery_raw;
+#ifdef SNOWFOX_TEST
+    // Test builds: the last 32 readings, top bit set when on battery.
+    snowfox_battery_log[snowfox_battery_log_next++ % 32] = battery_raw | (snowfox_on_battery() ? 0x8000 : 0);
+#endif
 }
+
 
 uint8_t snowfox_sleep_setting(void) {
     snowfox_config_t config = snowfox_config_read();
@@ -155,7 +217,9 @@ static void factory_reset_task(void) {
 }
 
 void snowfox_power_task(void) {
+#ifdef SNOWFOX_TEST
     scan_rate_task();
+#endif
     battery_task();
     sleep_task();
     factory_reset_task();
@@ -164,6 +228,15 @@ void snowfox_power_task(void) {
 
 bool snowfox_power_asleep(void) {
     return asleep;
+}
+
+// How far the reset hold has got, 0 to 100.
+uint8_t snowfox_factory_reset_progress(void) {
+    if (!reset_held) {
+        return 0;
+    }
+    uint16_t held = timer_elapsed(reset_pressed_at);
+    return held >= FACTORY_RESET_HOLD_MS ? 100 : (uint32_t)held * 100 / FACTORY_RESET_HOLD_MS;
 }
 
 void snowfox_factory_reset_key(bool pressed) {

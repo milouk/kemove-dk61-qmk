@@ -7,6 +7,9 @@
 #include "snowfox_led.h"
 #include "snowfox_power.h"
 #include "eeprom_lpc11uxx.h"
+#ifdef DYNAMIC_KEYMAP_ENABLE
+#    include "dynamic_keymap.h"
+#endif
 
 // The switch on the back is on in its Windows position. What it does is a setting:
 // 0 picks the Windows or Mac layout, as the stock firmware. 1 and 2 pick the layout
@@ -184,6 +187,26 @@ void snowfox_profile_select(uint8_t profile) {
     snowfox_led_show_profile(profile);
 }
 
+// Restores the current profile's default lighting and, with VIA, clears the key
+// changes on its layer. Profile 0 has no layer of its own.
+void snowfox_profile_reset(void) {
+    uint8_t profile = snowfox_profile();
+
+    eeconfig_update_rgb_matrix_default();
+    eeconfig_update_kb_datablock(&rgb_matrix_config, SF_LIGHTING_OFFSET(profile), sizeof(rgb_config_t));
+
+#ifdef DYNAMIC_KEYMAP_ENABLE
+    if (profile > 0) {
+        for (uint8_t row = 0; row < MATRIX_ROWS; row++) {
+            for (uint8_t col = 0; col < MATRIX_COLS; col++) {
+                dynamic_keymap_set_keycode(SF_LAYER_PROFILE1 + profile - 1, row, col, KC_TRNS);
+            }
+        }
+    }
+#endif
+    snowfox_led_show_profile(profile);
+}
+
 void keyboard_post_init_kb(void) {
     profile_apply_layers(snowfox_profile());
     apply_switch();
@@ -223,7 +246,9 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
         return false;
     }
 
-    if (record->event.pressed) {
+    // Only keys that send something to the computer reconnect. Fn, lighting and the
+    // host keys do not, so Fn+X does not first reconnect to the previous host.
+    if (record->event.pressed && keycode <= QK_BASIC_MAX) {
         snowfox_ble_key_pressed();
     }
 

@@ -84,8 +84,13 @@ extern cmd_queue_api* ble_cmdq;
 
 bool ble_custom_is_connected(void);
 
-void snowfox_ble_query(const char *command, char *out, uint8_t size, uint16_t timeout_ms);
 const ble_handle_t *snowfox_ble_handle(void);
+
+void snowfox_ble_key_pressed(void);
+
+#ifdef SNOWFOX_TEST
+// Test builds only.
+void snowfox_ble_query(const char *command, char *out, uint8_t size, uint16_t timeout_ms);
 
 typedef struct {
     uint16_t reports;    // keyboard reports sent
@@ -96,4 +101,12 @@ typedef struct {
 } snowfox_ble_stats_t;
 
 extern snowfox_ble_stats_t snowfox_ble_stats;
-void snowfox_ble_key_pressed(void);
+
+typedef struct {
+    uint32_t time : 22;
+    uint32_t what : 10;
+} snowfox_ble_log_t;
+extern snowfox_ble_log_t snowfox_ble_log[SNOWFOX_TEST];
+extern uint8_t           snowfox_ble_log_next;
+void                     snowfox_test_log(uint16_t what);
+#endif

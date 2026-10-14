@@ -23,6 +23,7 @@ enum snowfox_via_value {
     VIA_BOOTLOADER,
     VIA_PROFILE,
     VIA_SWITCH_MODE,
+    VIA_PROFILE_RESET,
 };
 
 static const char *const ble_state_names[] = {"off", "ready", "pairing", "connecting", "connected"};
@@ -85,6 +86,9 @@ static void set_value(uint8_t *data) {
             break;
         case VIA_SWITCH_MODE:
             snowfox_set_switch_mode(data[1]);
+            break;
+        case VIA_PROFILE_RESET:
+            snowfox_profile_reset();
             break;
         case VIA_BLE_CONNECT:
         case VIA_BLE_PAIR:

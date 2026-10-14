@@ -100,9 +100,15 @@ bool matrix_scan_custom(matrix_row_t current_matrix[]) {
 #endif
 
 // Rows only need time to return high when a key on the column pulled one low.
-// QMK's default waits MATRIX_IO_DELAY after every column, even with no key down.
+// QMK's default waits MATRIX_IO_DELAY after every column, even with no key down,
+// and on Cortex-M0 its wait_us() sleeps for at least one 1 ms system tick. This
+// busy-waits instead, in steps of 128 cycles since wait_cpuclock() takes at most 135.
+#define SETTLE_STEPS (MATRIX_IO_DELAY * (CPU_CLOCK / 1000000L) / 128)
+
 void matrix_output_unselect_delay(uint8_t line, bool key_pressed) {
     if (key_pressed) {
-        wait_us(MATRIX_IO_DELAY);
+        for (uint16_t i = 0; i < SETTLE_STEPS; i++) {
+            wait_cpuclock(128);
+        }
     }
 }
