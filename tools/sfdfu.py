@@ -109,6 +109,11 @@ def main():
     args = ap.parse_args()
 
     image = open(args.image, 'rb').read()
+    # The bootloader writes flash in 1 KB blocks. A last partial block is written in
+    # its manifest step without interrupts disabled, and a timer interrupt during that
+    # write hangs it until a power cycle. Padding with blank flash to whole blocks
+    # means there is never a partial block.
+    image += b'\xff' * (-len(image) % 1024)
     if not 0 < len(image) <= APP_MAX:
         raise SystemExit('image size %d is outside 1..%d' % (len(image), APP_MAX))
 
