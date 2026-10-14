@@ -16,6 +16,7 @@
 
 #include "snowfox_ble.h"
 #include "snowfox_led.h"
+#include "usb_util.h"
 #include "ch.h"
 #include "hal.h"
 #include "host.h"
@@ -34,6 +35,8 @@ static void ble_command_lock(const char* cmd);
 static void ack_take(void);
 static void ack_release(void);
 static bool ack_pass(void);
+static void ble_send_consumer_report(uint16_t usage);
+static void ble_send_system_report(uint8_t usage);
 
 /* -------------------- Static Local Variables ------------------------------ */
 ble_handle_t ble_handle = {
@@ -64,7 +67,7 @@ static ble_queue_cmd_t _queue_pop(void) {
         return 0;
     }
 
-    ble_queue_cmd_t ret = _cqdata.buffer[_cqdata.p_start++];
+    ble_queue_cmd_t ret = (ble_queue_cmd_t)_cqdata.buffer[_cqdata.p_start++];
     if (_cqdata.p_start >= BLE_MAX_COMMAND_QUEUE) {
         _cqdata.p_start -= BLE_MAX_COMMAND_QUEUE;
     }
@@ -79,7 +82,7 @@ static void _queue_put(ble_queue_cmd_t cmd) {
         return;
     }
 
-    _cqdata.buffer[_cqdata.p_end++] = cmd;
+    _cqdata.buffer[_cqdata.p_end++] = (uint8_t)cmd;
     if (_cqdata.p_end >= BLE_MAX_COMMAND_QUEUE) {
         _cqdata.p_end -= BLE_MAX_COMMAND_QUEUE;
     }
@@ -152,10 +155,74 @@ static void ble_command_lock(const char* raw_cmd) {
     ack_take();
 }
 
+// After the link drops, or a connection attempt gives up, reconnect to the same host:
+// first after 3 seconds, then doubling up to once a minute, at most 10 times (about
+// 7 minutes). Not after a requested disconnect, and not for the drop that pairing or
+// switching host causes.
+#define RECONNECT_FIRST_MS 3000
+#define RECONNECT_MAX_MS 60000
+#define RECONNECT_MAX_ATTEMPTS 10
+// A report that releases a key is sent again this long after, so one lost
+// packet cannot leave a key held on the host.
+#define RELEASE_REPEAT_MS 20
+
+static bool     user_disconnected;
+static bool     expect_drop;
+static uint8_t  reconnect_attempts;
+static bool     reconnect_pending;
+static uint32_t reconnect_from;
+static uint32_t reconnect_delay = RECONNECT_FIRST_MS;
+
+static bool     consumer_repeat_pending;
+static uint16_t consumer_repeat_from;
+static uint8_t  system_release_step;
+static uint16_t system_release_from;
+
+static report_keyboard_t last_report;
+static bool              repeat_pending;
+static uint16_t          repeat_from;
+
+snowfox_ble_stats_t snowfox_ble_stats;
+
+static void schedule_reconnect(void) {
+    if (!user_disconnected && reconnect_attempts < RECONNECT_MAX_ATTEMPTS) {
+        reconnect_pending = true;
+        reconnect_from    = timer_read32();
+    }
+}
+
+static void stop_reconnect(void) {
+    reconnect_pending  = false;
+    reconnect_attempts = 0;
+    reconnect_delay    = RECONNECT_FIRST_MS;
+}
+
+static void ble_send_keyboard_report(const report_keyboard_t *report) {
+    sdWrite(&SD1, (uint8_t*) "AT+HID=\1", 8);
+    sdWrite(&SD1, (uint8_t*) &report->mods, sizeof(report->mods));
+    sdWrite(&SD1, (uint8_t*) &report->keys, sizeof(report->keys));
+    snowfox_ble_stats.reports++;
+}
+
+static void release_all(void) {
+    static const uint8_t no_consumer[2] = {0, 0};
+    memset(&last_report, 0, sizeof(last_report));
+    ble_send_keyboard_report(&last_report);
+    sdWrite(&SD1, (uint8_t*) "AT+HID=\2", 8);
+    sdWrite(&SD1, no_consumer, sizeof(no_consumer));
+    repeat_pending = false;
+}
+
 static void update_event(uint8_t flag) {
+    ble_state_t previous = ble_handle.state;
+
     switch (flag){
         case BLE_EVENT_POST:
             ble_handle.state = STANDBY;
+            // A connection attempt that gave up: try again later.
+            if (previous == CONNECTING) {
+                schedule_reconnect();
+            }
             break;
 
         case BLE_EVENT_DISCOVER:
@@ -164,10 +231,20 @@ static void update_event(uint8_t flag) {
 
         case BLE_EVENT_CONNECTED:
             ble_handle.state = CONNECTED;
+            expect_drop      = false;
+            stop_reconnect();
+            // The host may still hold keys from before a drop.
+            release_all();
+            snowfox_ble_stats.connects++;
             break;
 
         case BLE_EVENT_DROP:
             ble_handle.state = STANDBY;
+            if (previous == CONNECTED && !expect_drop) {
+                schedule_reconnect();
+            }
+            expect_drop = false;
+            snowfox_ble_stats.drops++;
             break;
 
         case BLE_EVENT_CONNECTING:
@@ -187,26 +264,38 @@ static void dispatch_command(cmd_queue_api* qu) {
     ble_queue_cmd_t cmd = qu->pop();
     switch (cmd) {
         case CONNECT:
+            user_disconnected = false;
             ble_command_lock("AT+CONN");
             break;
         case DISCOVER:
+            user_disconnected = false;
+            expect_drop       = true;
+            stop_reconnect();
             ble_command_lock("AT+DISCOVER");
             break;
         case DROP_CONN:
+            user_disconnected = true;
+            stop_reconnect();
             ble_command_lock("AT+DISCONN");
             break;
         case CHANGE_NAME:
             ble_command_lock("AT+NAME=SnowfoxQMK");
             break;
         case PICK_KEYBOARD1:
+            expect_drop         = ble_handle.state == CONNECTED;
+            stop_reconnect();
             ble_handle.keyboard = BLE_KEYBOARD1;
             ble_command_lock("AT+KEYBOARD=1");
             break;
         case PICK_KEYBOARD2:
+            expect_drop         = ble_handle.state == CONNECTED;
+            stop_reconnect();
             ble_handle.keyboard = BLE_KEYBOARD2;
             ble_command_lock("AT+KEYBOARD=2");
             break;
         case PICK_KEYBOARD3:
+            expect_drop         = ble_handle.state == CONNECTED;
+            stop_reconnect();
             ble_handle.keyboard = BLE_KEYBOARD3;
             ble_command_lock("AT+KEYBOARD=3");
             break;
@@ -215,22 +304,54 @@ static void dispatch_command(cmd_queue_api* qu) {
     }
 }
 
+// Reads a decimal or hex number. Saves the C library's strtol, which needs 80 bytes
+// of RAM for errno.
+static uint32_t parse_number(const char *text, uint8_t base) {
+    uint32_t value = 0;
+    for (;; text++) {
+        uint8_t digit;
+        if (*text >= '0' && *text <= '9') {
+            digit = *text - '0';
+        } else if (base == 16 && (*text | 0x20) >= 'a' && (*text | 0x20) <= 'f') {
+            digit = (*text | 0x20) - 'a' + 10;
+        } else {
+            return value;
+        }
+        value = value * base + digit;
+    }
+}
+
+// Replies collected while snowfox_ble_query() runs.
+static char   *query_out;
+static uint8_t query_len;
+static uint8_t query_size;
+
 static void process_response(char* buffer) {
     dprintf("BLE UART Rx: %s\n", buffer);
+    if (query_out != NULL) {
+        for (const char *c = buffer; *c && query_len + 1 < query_size; c++) {
+            query_out[query_len++] = *c;
+        }
+        if (query_len + 1 < query_size) {
+            query_out[query_len++] = '|';
+        }
+        query_out[query_len] = '\0';
+    }
+
     if (strncmp("OK", buffer, 2) == 0) {
         ack_release();
     }
 
     else if (strncmp("+LEDPAGE:", buffer, 9) == 0) {
-        ble_handle.led_page = strtol(buffer+9, NULL, 16);
+        ble_handle.led_page = parse_number(buffer + 9, 16);
     }
 
     else if (strncmp("+KEYBOARD:", buffer, 10) == 0) {
-        ble_handle.keyboard = strtol(buffer+10, NULL, 10) - 1;
+        ble_handle.keyboard = parse_number(buffer + 10, 10) - 1;
     }
 
     else if (strncmp("+EVENT:", buffer, 7) == 0) {
-        update_event((uint8_t) strtol(buffer+7, NULL, 16));
+        update_event((uint8_t) parse_number(buffer + 7, 16));
     }
 }
 
@@ -250,7 +371,7 @@ void ble_custom_init(void) {
     ble_cmdq->put(CHANGE_NAME);
 
     // Reconnect to the last host used, as the stock firmware does.
-    snowfox_config_t config = {.raw = eeconfig_read_kb()};
+    snowfox_config_t config = snowfox_config_read();
     if (config.ble_slot > 0) {
         ble_cmdq->put(PICK_KEYBOARD1 + config.ble_slot - 1);
         ble_cmdq->put(CONNECT);
@@ -260,8 +381,28 @@ void ble_custom_init(void) {
 void ble_custom_task(void) {
     static char* p_write = uart_rx_buffer;
 
-    if (ble_custom_is_connected()) {
-        led_update_kb((led_t) ble_handle.led_page);
+    if (repeat_pending && timer_elapsed(repeat_from) >= RELEASE_REPEAT_MS) {
+        repeat_pending = false;
+        ble_send_keyboard_report(&last_report);
+        snowfox_ble_stats.repeats++;
+    }
+    if (consumer_repeat_pending && timer_elapsed(consumer_repeat_from) >= RELEASE_REPEAT_MS) {
+        consumer_repeat_pending = false;
+        ble_send_consumer_report(0);
+        snowfox_ble_stats.repeats++;
+    }
+    if (system_release_step != 0 && timer_elapsed(system_release_from) >= 30) {
+        ble_send_system_report(0);
+        system_release_from = timer_read();
+        system_release_step = system_release_step == 1 ? 2 : 0;
+    }
+
+    if (reconnect_pending && timer_elapsed32(reconnect_from) >= reconnect_delay) {
+        reconnect_pending = false;
+        reconnect_attempts++;
+        reconnect_delay = MIN(reconnect_delay * 2, RECONNECT_MAX_MS);
+        ble_cmdq->put(CONNECT);
+        snowfox_ble_stats.reconnects++;
     }
 
     while(!ble_cmdq->is_empty()) {
@@ -297,49 +438,47 @@ bool ble_custom_is_connected(void) {
 }
 
 void ble_custom_send_keyboard(report_keyboard_t *report) {
-    sdWrite(&SD1, (uint8_t*) "AT+HID=\1", 8);
-    sdWrite(&SD1, (uint8_t*) &report->mods, sizeof(report->mods));
-    sdWrite(&SD1, (uint8_t*) &report->keys, sizeof(report->keys));
+    bool released = (last_report.mods & ~report->mods) != 0;
+    for (uint8_t i = 0; i < KEYBOARD_REPORT_KEYS && !released; i++) {
+        if (last_report.keys[i] != 0 && memchr(report->keys, last_report.keys[i], KEYBOARD_REPORT_KEYS) == NULL) {
+            released = true;
+        }
+    }
+
+    ble_send_keyboard_report(report);
+    memcpy(&last_report, report, sizeof(last_report));
+    repeat_pending = released;
+    repeat_from    = timer_read();
 }
 
 void ble_custom_send_mouse(report_mouse_t *report) {}
 
-void ble_custom_send_consumer(uint16_t usage) {
-    uint8_t report[2];
-
-    // Send press
-    report[0] = (uint8_t)(usage & 0xFF);
-    report[1] = (uint8_t)((usage >> 8) & 0xFF);
-    sdWrite(&SD1, (uint8_t*) "AT+HID=\2", 8);
-    sdWrite(&SD1, report, sizeof(report));
-
-    // Send release immediately (no delay)
-    report[0] = 0x00;
-    report[1] = 0x00;
+static void ble_send_consumer_report(uint16_t usage) {
+    uint8_t report[2] = {usage & 0xFF, usage >> 8};
     sdWrite(&SD1, (uint8_t*) "AT+HID=\2", 8);
     sdWrite(&SD1, report, sizeof(report));
 }
 
+// Press and release go out together, and the release once more a little later.
+void ble_custom_send_consumer(uint16_t usage) {
+    ble_send_consumer_report(usage);
+    ble_send_consumer_report(0);
+    consumer_repeat_pending = true;
+    consumer_repeat_from    = timer_read();
+}
 
+
+static void ble_send_system_report(uint8_t usage) {
+    sdWrite(&SD1, (uint8_t*) "AT+HID=\3", 8);
+    sdWrite(&SD1, &usage, 1);
+}
+
+// The module treats both Power (0x81) and Sleep (0x82) as Sleep. The release
+// follows 30 ms later from the task, and is sent twice.
 void ble_custom_send_system(uint16_t usage) {
-    uint8_t report[1];
-
-    // Both Power and Sleep keys will trigger Sleep over BLE
-    // because your BLE hardware treats 0x81 and 0x83 as Sleep.
-    if (usage == 0x81 || usage == 0x82) {
-        report[0] = 0x81;
-    } else {
-        report[0] = 0x00;
-    }
-
-    sdWrite(&SD1, (uint8_t*) "AT+HID=\3", 8);
-    sdWrite(&SD1, report, 1);
-
-    chThdSleepMilliseconds(30);
-
-    report[0] = 0x00;
-    sdWrite(&SD1, (uint8_t*) "AT+HID=\3", 8);
-    sdWrite(&SD1, report, 1);
+    ble_send_system_report((usage == 0x81 || usage == 0x82) ? 0x81 : 0);
+    system_release_step = 1;
+    system_release_from = timer_read();
 }
 
 /* -------------------- QMK Bluetooth driver hooks -------------------------- */
@@ -353,6 +492,10 @@ void bluetooth_task(void) {
 
 bool bluetooth_is_connected(void) {
     return ble_custom_is_connected();
+}
+
+uint8_t bluetooth_keyboard_leds(void) {
+    return ble_handle.led_page;
 }
 
 void bluetooth_send_keyboard(report_keyboard_t *report) {
@@ -369,4 +512,43 @@ void bluetooth_send_system(uint16_t usage) {
     if (usage != 0) {
         ble_custom_send_system(usage);
     }
+}
+
+// Sends one AT command and collects every reply line for timeout_ms, separated by '|'.
+void snowfox_ble_query(const char *command, char *out, uint8_t size, uint16_t timeout_ms) {
+    query_out  = out;
+    query_size = size;
+    query_len  = 0;
+    out[0]     = '\0';
+
+    ble_command(command);
+    uint16_t start = timer_read();
+    while (timer_elapsed(start) < timeout_ms) {
+        ble_custom_task();
+    }
+    query_out = NULL;
+}
+
+const ble_handle_t *snowfox_ble_handle(void) {
+    return &ble_handle;
+}
+
+// After automatic reconnecting has given up, typing on battery tries again, at most
+// every 10 seconds, as Keychron's wireless firmware does. Not after a requested disconnect.
+#define KEYPRESS_RECONNECT_MS 10000
+
+void snowfox_ble_key_pressed(void) {
+    static uint32_t last_try;
+    snowfox_config_t config = snowfox_config_read();
+
+    if (ble_handle.state != STANDBY || user_disconnected || reconnect_pending || config.ble_slot == 0 || usb_connected_state()) {
+        return;
+    }
+    if (last_try != 0 && timer_elapsed32(last_try) < KEYPRESS_RECONNECT_MS) {
+        return;
+    }
+    last_try = timer_read32();
+    stop_reconnect();
+    ble_cmdq->put(CONNECT);
+    snowfox_ble_stats.reconnects++;
 }

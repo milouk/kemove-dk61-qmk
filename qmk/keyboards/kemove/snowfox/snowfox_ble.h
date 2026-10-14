@@ -67,10 +67,10 @@ typedef struct {
 } ble_handle_t;
 
 typedef struct {
-    ble_queue_cmd_t buffer[BLE_MAX_COMMAND_QUEUE];
-    size_t counter;
-    size_t p_start;
-    size_t p_end;
+    uint8_t buffer[BLE_MAX_COMMAND_QUEUE];
+    uint8_t counter;
+    uint8_t p_start;
+    uint8_t p_end;
 } _cmd_queue_t;
 
 typedef struct {
@@ -84,3 +84,16 @@ extern cmd_queue_api* ble_cmdq;
 
 bool ble_custom_is_connected(void);
 
+void snowfox_ble_query(const char *command, char *out, uint8_t size, uint16_t timeout_ms);
+const ble_handle_t *snowfox_ble_handle(void);
+
+typedef struct {
+    uint16_t reports;    // keyboard reports sent
+    uint16_t repeats;    // release reports sent a second time
+    uint16_t connects;   // connected events
+    uint16_t drops;      // dropped events
+    uint16_t reconnects; // reconnect attempts started by the firmware
+} snowfox_ble_stats_t;
+
+extern snowfox_ble_stats_t snowfox_ble_stats;
+void snowfox_ble_key_pressed(void);

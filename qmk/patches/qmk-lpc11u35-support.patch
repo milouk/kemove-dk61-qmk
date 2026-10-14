@@ -1,7 +1,7 @@
 From 2bd1332df4d3a56715973983e6b45d36e7f4e530 Mon Sep 17 00:00:00 2001
 From: Michael Loukeris <loukerismichalis@gmail.com>
 Date: Wed, 14 Oct 2026 02:20:15 +0300
-Subject: [PATCH 1/2] Add NXP LPC11U35 support
+Subject: [PATCH 1/3] Add NXP LPC11U35 support
 
 ---
  builddefs/common_features.mk                  |   4 +
@@ -403,7 +403,7 @@ index 557bfb03..201ec1af 100644
 From 1f278faf5aae0bcf305510e36142c5f64de771a9 Mon Sep 17 00:00:00 2001
 From: Michael Loukeris <loukerismichalis@gmail.com>
 Date: Wed, 14 Oct 2026 09:18:07 +0300
-Subject: [PATCH 2/2] Keep the IAP RAM free and add an EEPROM flush for
+Subject: [PATCH 2/3] Keep the IAP RAM free and add an EEPROM flush for
  LPC11U35
 
 ---
@@ -562,3 +562,31 @@ index be130249..1ab70632 100644
 +
 +// Writes out any bytes still waiting to be written. Call before a reset.
 +void eeprom_lpc11uxx_flush(void);
+
+From 1fc319ed2c27e597957c736f13b9285f20f615b6 Mon Sep 17 00:00:00 2001
+From: Michael Loukeris <loukerismichalis@gmail.com>
+Date: Wed, 14 Oct 2026 13:26:52 +0300
+Subject: [PATCH 3/3] Do not erase the LPC11U35 EEPROM on format
+
+---
+ platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.c b/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.c
+index 0107f7f0..e7781d28 100644
+--- a/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.c
++++ b/platforms/chibios/drivers/eeprom/eeprom_lpc11uxx.c
+@@ -73,6 +73,13 @@ void eeprom_driver_init(void) {
+     chVTObjectInit(&flush_timer);
+ }
+ 
++// Real EEPROM needs no formatting. Only erase when asked to.
++void eeprom_driver_format(bool erase) {
++    if (erase) {
++        eeprom_driver_erase();
++    }
++}
++
+ void eeprom_driver_erase(void) {
+     uint8_t blank[EEPROM_PAGE_SIZE];
+     memset(blank, 0xFF, sizeof(blank));

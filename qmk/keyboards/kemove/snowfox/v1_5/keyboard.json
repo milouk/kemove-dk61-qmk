@@ -12,8 +12,7 @@
         "device_version": "1.5.0",
         "shared_endpoint": {
             "keyboard": true
-        },
-        "polling_interval": 10
+        }
     },
     "matrix_pins": {
         "cols": [
@@ -553,7 +552,10 @@
         "dip_switch": true,
         "extrakey": true,
         "mousekey": true,
-        "nkro": false
+        "nkro": true,
+        "rgb_matrix": true,
+        "os_detection": true,
+        "wpm": true
     },
     "bluetooth": {
         "driver": "custom"
@@ -562,5 +564,43 @@
         "pins": [
             "A20"
         ]
+    },
+    "rgb_matrix": {
+        "driver": "custom",
+        "sleep": true,
+        "max_brightness": 200,
+        "default": {
+            "val": 128
+        },
+        "animations": {
+            "breathing": true,
+            "cycle_all": true,
+            "cycle_left_right": true,
+            "cycle_up_down": true,
+            "rainbow_moving_chevron": true,
+            "cycle_out_in": true,
+            "cycle_spiral": true,
+            "dual_beacon": true,
+            "rainbow_beacon": true,
+            "raindrops": true,
+            "jellybean_raindrops": true,
+            "typing_heatmap": true,
+            "solid_reactive_simple": true,
+            "solid_reactive_multiwide": true,
+            "solid_splash": true,
+            "splash": true
+        },
+        "led_count": 61
+    },
+    "dynamic_keymap": {
+        "layer_count": 8
+    },
+    "host": {
+        "default": {
+            "nkro": true
+        }
+    },
+    "build": {
+        "debounce_type": "asym_eager_defer_pk"
     }
 }

@@ -16,18 +16,79 @@ See the [build environment setup](https://docs.qmk.fm/#/getting_started_build_to
 
 The firmware is linked at `0x2000` and needs the [OpenKemove DFU bootloader](https://github.com/OpenKemove/kemove_lpc_dfu) in place of the stock one. Installing it and flashing are described at <https://github.com/milouk/kemove-dk61-qmk>.
 
-Enter the bootloader in 2 ways:
+Enter the bootloader in 3 ways:
 
 * **Physical key**: hold Esc while plugging in the keyboard
 * **Keycode in layout**: press the key mapped to `QK_BOOT`, Fn+B in the default keymap
+* **VIA**: Enter update mode on the Kemove page
 
-## Keymap
+## Keys
 
-The default keymap follows the stock layout and Fn shortcuts. The switch on the back selects the Windows or Mac base layer.
+The default keymap follows the stock layout and Fn shortcuts.
 
 | Keys | Function |
 | --- | --- |
+| Fn+1 to Fn+=, Fn+Esc | F1 to F12, \` |
+| Fn+U, I, O | Print Screen, Scroll Lock, Pause |
+| Fn+J, K, L, M, comma, period | Insert, Home, Page Up, Delete, End, Page Down |
+| Fn+/, Right Alt, Menu, Right Ctrl | Arrows |
+| Fn+A, S, D, F, G, H | Play, previous, next, mute, volume down, volume up |
 | Fn+Backspace | Lighting on or off |
-| Fn+\ | Next lighting mode |
+| Fn+\, Fn+] | Next, previous lighting effect |
 | Fn+P, Fn+[ | Brightness down, up |
-| Fn+Z, Fn+X, Fn+C | Bluetooth device 1, 2, 3. Hold 3 seconds to pair |
+| Fn+;, Fn+' | Effect speed down, up |
+| Fn+Caps Lock | Change colour |
+| Fn+Q, W, E, R, T | Profile 1 to 4, profile 0 |
+| Fn+Z, X, C | Bluetooth host 1 to 3. Hold 3 seconds to pair |
+| Fn+Right Shift (hold) | Battery level |
+| Fn+Space | Lock the F keys on the number row |
+| Fn+Win | Lock the Win key |
+| Fn+Tab (hold 3 seconds) | Reset all settings |
+| Fn+B | Bootloader |
+
+Battery, reset, profile, Fn lock and Bluetooth host keys are also custom keycodes in VIA.
+
+## Profiles
+
+Profiles 1 to 4 are layers over the base layer, empty in the default keymap. Fill in only the keys that should differ, in VIA or in a keymap. Profile 0 is the base layer alone. Each profile remembers its own lighting, and switching flashes the keyboard in the profile's colour: white, red, green, blue, yellow for 0 to 4.
+
+## Switch on the back
+
+By default it selects the Windows or Mac base layer. It can instead be set to pick the layout from the computer seen over USB, with the switch in its Mac position then locking the Win key or the F keys.
+
+## Lighting
+
+QMK's RGB Matrix effects, plus a typing speed effect that goes from dim blue to bright red as you type faster.
+
+| Indicator | Meaning |
+| --- | --- |
+| Caps Lock red | Caps Lock on |
+| Win key blinking red | Win key locked |
+| Space bar blinking red | F keys locked |
+| Z, X or C blinking cyan | Pairing that host |
+| Z, X or C blinking purple | Reconnecting to that host |
+| Z, X or C blue for 3 seconds | Connected |
+| Only Fn keys lit | Fn held |
+| Number row | Battery level while Fn+Right Shift is held: one key per 10%, red to 20%, yellow to 50%, then green |
+
+## Bluetooth
+
+Three hosts. The keyboard reconnects to the last one at power up, and again after a dropped link, retrying for about 7 minutes. Over USB it uses NKRO, over Bluetooth 6KRO.
+
+## Battery
+
+On battery the lights turn off after 3 minutes without typing and come back with the next key press. Between key presses the firmware pauses, so the chip idles while you are not typing.
+
+## VIA
+
+The VIA keymap adds a Kemove page:
+
+| Setting | Options |
+| --- | --- |
+| Battery | Level, read from the keyboard |
+| Lights off on battery after | Off, 1, 3, 5 or 10 minutes |
+| Bluetooth | Status, connect or pair host 1 to 3, disconnect |
+| Profile | 0 to 4 |
+| Back switch | Windows or Mac layout, or automatic with the switch locking the Win key or the F keys |
+| Enter update mode | Bootloader |
+| Reset all settings | Factory reset |

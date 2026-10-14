@@ -1,6 +1,6 @@
 # kemove-dk61-qmk
 
-QMK for the old-generation Kemove DK61 Shadow / Snowfox (PCB v1.5), with a keymap that follows Kemove's stock layout.
+QMK for the old-generation Kemove DK61 Shadow / Snowfox (PCB v1.5): the stock layout and Fn shortcuts, Bluetooth, RGB lighting, profiles, battery level and sleep, all configurable in VIA.
 
 > **Use at your own risk.** Flashing means opening the keyboard once and replacing Kemove's bootloader. Take the full backup described below first. This is a work in progress.
 
@@ -20,22 +20,22 @@ The PCB revision is printed on the board. v1.4 shares the v1.5 pin layout but is
 
 | | |
 | --- | --- |
-| USB typing, stock layout | Working |
-| Updates over USB, no disassembly | Working |
-| Fn layer, lighting, Bluetooth, battery | Built, not yet tested |
-| Saved settings (keymap, lighting), VIA keymap editing | Working |
-| Lighting speed/colour keys, profiles, Fn lock, factory reset, battery display, VIA lighting control | Missing |
+| USB typing, stock layout, Fn layer, media keys | Tested |
+| Updates over USB, no disassembly | Tested |
+| Saved settings, VIA keymap editing | Tested |
+| Bluetooth pairing, typing, reconnect at power up | Tested on one host |
+| RGB lighting, profiles, Fn and Win lock, battery level, sleep on battery, factory reset, VIA Kemove page, automatic Windows/Mac layout, reconnect after a drop, NKRO | Built, being tested |
 
-Kemove's APEX software does not talk to QMK.
+Every key, indicator and setting is described in the [keyboard readme](qmk/keyboards/kemove/snowfox/readme.md). Kemove's APEX software does not talk to QMK; VIA replaces it.
 
 ## What is in here
 
-- `qmk/keyboards/kemove/snowfox/` — the keyboard, for current QMK. The `default` keymap is the stock layout and Fn shortcuts from Kemove's K61 manual, `via` is the same with VIA enabled. Fn+B enters the bootloader.
-- `qmk/via/` — VIA definition. Load it in VIA's Design tab.
-- `qmk/patches/` — LPC11U35 support for QMK, USB driver fixes for ChibiOS-Contrib, and a bootloader build fix.
-- `tools/sfdfu.py` — firmware updater for the OpenKemove bootloader. `dfu-util` fails with it on macOS.
-- `tools/analysis/` — scripts used to unpack Kemove's installers and inspect firmware images.
-- `docs/hardware-notes.md` — what was verified about the hardware, and how.
+- `qmk/keyboards/kemove/snowfox/`: the keyboard, for current QMK. The `default` keymap is the stock layout and Fn shortcuts from Kemove's K61 manual, `via` is the same with VIA and its Kemove settings page.
+- `qmk/via/`: VIA definition, with the lighting menu and the Kemove page. Load it in VIA's Design tab until VIA lists the keyboard.
+- `qmk/patches/`: LPC11U35 support for QMK, USB driver fixes for ChibiOS-Contrib, and a bootloader build fix.
+- `tools/sfdfu.py`: firmware updater for the OpenKemove bootloader. `dfu-util` fails with it on macOS.
+- `tools/analysis/`: scripts used to unpack Kemove's installers and inspect firmware images.
+- `docs/hardware-notes.md`: what was verified about the hardware, and how.
 
 No Kemove firmware is included.
 
@@ -59,7 +59,7 @@ git apply ../qmk/patches/kemove_lpc_dfu-static-inline.patch
 make V1_5 USE_OPT="-Os -g -fomit-frame-pointer -falign-functions=16"
 ```
 
-The two patches are open upstream as [qmk_firmware#26517](https://github.com/qmk/qmk_firmware/pull/26517) and [ChibiOS-Contrib#456](https://github.com/ChibiOS/ChibiOS-Contrib/pull/456).
+The QMK patch and the USB fixes are open upstream as [qmk_firmware#26517](https://github.com/qmk/qmk_firmware/pull/26517) and [ChibiOS-Contrib#456](https://github.com/ChibiOS/ChibiOS-Contrib/pull/456).
 
 The bootloader must be 8192 bytes or smaller. Built at the default `-O2` with a current GCC it is not.
 
@@ -84,7 +84,7 @@ Never write an image whose 32-bit word at `0x2FC` is `0x12345678`, `0x87654321`,
 
 ## Update
 
-1. Press Fn+B, or hold Esc while plugging in. The keyboard goes dark and shows up as `feed:6969`.
+1. Press Fn+B, use Enter update mode in VIA, or hold Esc while plugging in. The keyboard goes dark and shows up as `feed:6969`.
 2. `pip install pyusb`, then `tools/sfdfu.py firmware.bin`. It writes, reads back, verifies and restarts the keyboard.
 
 ## Back to stock
@@ -93,9 +93,9 @@ Repeat step 2 of the install and write your backup with the same `dd` command.
 
 ## Credits
 
-- [OpenKemove](https://openkemove.github.io/) — the LPC11Uxx QMK port and DFU bootloader.
-- [hftsai256](https://github.com/hftsai256/openkemove_qmk_firmware) — v1.4/v1.5 support and three Bluetooth devices.
-- [thedelog](https://github.com/thedelog/Kemove-Snowfox-Media_keys_on_BLE) — media keys over Bluetooth, and the tree this was ported from.
+- [OpenKemove](https://openkemove.github.io/): the LPC11Uxx QMK port and DFU bootloader.
+- [hftsai256](https://github.com/hftsai256/openkemove_qmk_firmware): v1.4/v1.5 support and three Bluetooth devices.
+- [thedelog](https://github.com/thedelog/Kemove-Snowfox-Media_keys_on_BLE): media keys over Bluetooth, and the tree this was ported from.
 - The OpenKemove Discord, for the `TP3` tip.
 
 ## License

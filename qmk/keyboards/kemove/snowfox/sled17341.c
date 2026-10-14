@@ -1,291 +1,163 @@
 // Copyright 2020 Yaotian Feng / Codetector
+// Copyright 2026 Michael Loukeris (@milouk)
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include "sled17341.h"
-#include "hal.h"
-#include "ch.h"
-#include "board.h"
-#include "quantum.h"
-#include "snowfox.h"
 #include <string.h>
-#include QMK_KEYBOARD_H
+#include "quantum.h"
+#include "sled17341.h"
 
-led_regs_t led_memcache[CTRLER_COUNT] = {0};
+// Frame header: page in the low nibble, a fixed 0x20, and bit 7 set for reads.
+#define SLED_FRAME_1 0x00
+#define SLED_FRAME_FUNCTION 0x0B
+#define SLED_HEADER_WRITE 0x20
 
-sled_status_conf_t status_conf[SLED_STATUS_CONF_SIZE] = {
-    [SLED_STATUS_CONF_NUM_LOCK] = {
-        .pos = KC_NO
-    },
-    [SLED_STATUS_CONF_CAPS_LOCK] = {
-        .pos = 81,
-        .enable = false,
-        .blink = false,
-        .rgb = {.r = 255, .g = 0, .b = 0},
-    },
-    [SLED_STATUS_CONF_SCROLL_LOCK] = {
-        .pos = 155,
-        .enable = false,
-        .blink = false,
-        .rgb = {.r = 255, .g = 0, .b = 0},
-    },
-    [SLED_STATUS_CONF_BLE1] = {
-        .pos = 116,
-        .enable = false,
-        .blink = false,
-        .rgb = {.r = 255, .g = 0, .b = 255},
-    },
-    [SLED_STATUS_CONF_BLE2] = {
-        .pos = 119,
-        .enable = false,
-        .blink = false,
-        .rgb = {.r = 255, .g = 0, .b = 255},
-    },
-    [SLED_STATUS_CONF_BLE3] = {
-        .pos = 146,
-        .enable = false,
-        .blink = false,
-        .rgb = {.r = 255, .g = 0, .b = 255},
-    }
+// Function registers
+#define SLED_REG_PICTURE_DISPLAY 0x01
+#define SLED_REG_SHUTDOWN 0x0A
+#define SLED_REG_SLEW_RATE 0x0E
+#define SLED_REG_CURRENT 0x0F
+#define SLED_REG_VAF_1 0x14
+#define SLED_REG_VAF_2 0x15
+
+#define SLED_MATRIX_TYPE_2 0x08
+#define SLED_POWER_OFF 0x00
+#define SLED_POWER_NORMAL 0x01
+#define SLED_SLEW_RATE_ENABLE 0x01
+// Constant current, 8 mA + 0.5 mA per step. 25 gives 20.5 mA, as the stock firmware.
+#define SLED_CURRENT (0x80 | 25)
+#define SLED_VAF_1_VALUE 0x44
+#define SLED_VAF_2_VALUE 0x44
+
+#define SLED_COUNT 2
+#define SLED_SLOTS 144
+// Each LED is three channels, 12 slots apart.
+#define SLED_GREEN_OFFSET 12
+#define SLED_BLUE_OFFSET 24
+
+// Frame 1 layout: enable bits, blink bits, then one PWM byte per slot.
+#define SLED_FRAME_ENABLE 0x00
+#define SLED_FRAME_BLINK (SLED_SLOTS / 8)
+#define SLED_FRAME_PWM (2 * SLED_SLOTS / 8)
+
+// SCK = 48 MHz / (prescaler * (rate + 1)) = 1 MHz.
+static const SPIConfig sled_spi_config = {
+    .clock_divider   = 1,
+    .clock_prescaler = 24,
+    .clock_rate      = 1,
+    .data_size       = 8,
 };
 
-const ioline_t led_spi_lines[CTRLER_COUNT] = {LINE_LED1_CS, LINE_LED2_CS};
+static const ioline_t sled_cs[SLED_COUNT] = {LINE_LED1_CS, LINE_LED2_CS};
 
-const uint8_t keypos_led_map[MATRIX_ROWS][MATRIX_COLS] = LAYOUT_ansi_61(
-     2,   3,   4,   5,   6,   7,   8,   9,  10,  11,  36,  37, 189, 190,
-    46,  47,  72,  73,  74,  75,  76,  77,  80, 151, 152, 153, 185, 154,
-    81,  82,  83, 108, 109, 110, 111, 112, 113, 182, 155, 181,      180,
-   114, 116, 119, 146, 147, 148, 149, 150, 186, 191, 216,      187,
-    38,  41,  42,            43,                 45,  44,   115,    188
-);
-
-const uint8_t ledpos_phy_map[PHY_ROWS][PHY_COLS] = {
-    {    2,   3,   4,   5,   6,   7,   8,   9,  10,  11,  36,  37, 189, 190},
-    {   46,  47,  72,  73,  74,  75,  76,  77,  80, 151, 152, 153, 185, 154},
-    {   81,  82,  83, 108, 109, 110, 111, 112, 113, 182, 155, 181, 180, 180},
-    {  114, 114, 116, 119, 146, 147, 148, 149, 150, 186, 191, 216, 187, 187},
-    {   38,  41,  42,  43,  43,  43,  43,  43,  43,  43,  45,  44, 115, 188}
+// Red channel slot of each RGB Matrix LED, in layout order. Slots 144 and up are on the second chip.
+static const uint8_t led_slot[RGB_MATRIX_LED_COUNT] = {
+    2,   3,   4,   5,   6,   7,   8,   9,   10,  11,  36,  37,  189, 190,
+    46,  47,  72,  73,  74,  75,  76,  77,  80,  151, 152, 153, 185, 154,
+    81,  82,  83,  108, 109, 110, 111, 112, 113, 182, 155, 181, 180,
+    114, 116, 119, 146, 147, 148, 149, 150, 186, 191, 216, 187,
+    38,  41,  42,  43,  45,  44,  115, 188,
 };
 
-static void spi_write(sled_spiio_t handle) {
-    palClearLine(handle.line);
+static uint8_t pwm[SLED_COUNT][SLED_SLOTS];
+static bool    dirty;
+static bool    powered;
+static bool    dark;
+static uint16_t dark_since;
 
-    uint8_t header = handle.frame | SLED_REGS_SANITY | SLED_OPERATION_WRITE;
-    spiStartSend(&SPID1, sizeof(header), &header);
-    spiStartSend(&SPID1, sizeof(handle.offset), &handle.offset);
-    spiStartSend(&SPID1, handle.length, handle.buffer);
+// The chips are shut down once every LED has been dark for this long.
+#define SLED_DARK_OFF_MS 1000
 
-    palSetLine(handle.line);
+static void sled_write(uint8_t chip, uint8_t page, uint8_t offset, const void *data, size_t length) {
+    uint8_t header[2] = {page | SLED_HEADER_WRITE, offset};
+
+    spiAcquireBus(&SPID1);
+    palClearLine(sled_cs[chip]);
+    spiSend(&SPID1, sizeof(header), header);
+    spiSend(&SPID1, length, data);
+    palSetLine(sled_cs[chip]);
+    spiReleaseBus(&SPID1);
 }
 
-static inline void sled_configure(ioline_t line, sled_fn_t operation, uint8_t value) {
-    sled_spiio_t handle = {
-        .line = line,
-        .frame = SLED_REGS_FRAME_FUNC,
-        .offset = operation,
-        .length = sizeof(value),
-        .buffer = &value};
-    spi_write(handle);
-}
-
-static sled_pos_t sled_matrix_pos(uint8_t led_ind) {
-    sled_pos_t ret = {0};
-    ret.ind = led_ind % CTRL_SLOTS;
-    ret.ctrler = led_ind / CTRL_SLOTS;
-    ret.bit = ret.ind % 8;
-    ret.byte = ret.ind / 8;
-
-    return ret;
-}
-
-static void sled_ctrl_init(void) {
-    for (uint8_t cs=0; cs < CTRLER_COUNT; cs++) {
-        sled_configure(led_spi_lines[cs], SLED_SHUTDOWN, SLED_POWER_OFF_SW);
-        sled_configure(led_spi_lines[cs], SLED_PICTURE_DISPLAY, SLED_MATRIX_TYPE_2);
-
-        sled_configure(led_spi_lines[cs], SLED_DISPLAY_OPTION,
-            SLED_BLINK_ACTIVE_MAX |
-            SLED_BLINK_ENABLE |
-            SLED_BLINK_FRAME_75);
-
-        // Constant current control: value * 0.5 + 8 mA
-        sled_configure(led_spi_lines[cs], SLED_CURRENT_CTRL, SLED_CONST_CURRENT_ENABLE | 25);
-/*
-        sled_configure(led_spi_lines[cs], SLED_STAGGERED_DELAY,
-            (0 << SLED_STD1_OFFSET) |
-            (1 << SLED_STD2_OFFSET) |
-            (2 << SLED_STD3_OFFSET) |
-            (3 << SLED_STD4_OFFSET));
-*/
-        sled_configure(led_spi_lines[cs], SLED_SLEW_RATE, SLED_SLEW_RATE_ENABLE);
-
-        sled_configure(led_spi_lines[cs], SLED_VAF_1,
-            (SLED_VAF_BASELINE << SLED_VAF1_OFFSET) |
-            (SLED_VAF_BASELINE << SLED_VAF2_OFFSET));
-        sled_configure(led_spi_lines[cs], SLED_VAF_2,
-            (SLED_VAF_BASELINE << SLED_VAF3_OFFSET) |
-            SLED_FVAF_FTIME_ENABLE);
+static void sled_write_register(uint8_t reg, uint8_t value) {
+    for (uint8_t chip = 0; chip < SLED_COUNT; chip++) {
+        sled_write(chip, SLED_FRAME_FUNCTION, reg, &value, 1);
     }
 }
 
-/*
-static void sled_find_indicator(void) {
-    status_indicator.caps_lock = sled_find_index(KC_CAPSLOCK);
-    status_indicator.scrl_lock = sled_find_index(KC_SCROLLLOCK);
-    status_indicator.num_lock  = sled_find_index(KC_NUMLOCK);
-    status_indicator.ble_ports[0] = sled_find_index(SNOWFOX_BLE_KB1);
-    status_indicator.ble_ports[1] = sled_find_index(SNOWFOX_BLE_KB2);
-    status_indicator.ble_ports[2] = sled_find_index(SNOWFOX_BLE_KB3);
-}
-*/
-
-void sled_cache_init(void) {
-    for (uint8_t page=0; page < CTRLER_COUNT; page++) {
-        memset(led_memcache[page].enable, 0xFF, sizeof(led_memcache[page].enable));
-        memset(led_memcache[page].blink,  0x00, sizeof(led_memcache[page].blink ));
-        memset(led_memcache[page].pwm,    0x00, sizeof(led_memcache[page].pwm   ));
+static void sled_set_slot(uint8_t slot, uint8_t value) {
+    uint8_t *p = &pwm[slot / SLED_SLOTS][slot % SLED_SLOTS];
+    if (*p != value) {
+        *p    = value;
+        dirty = true;
     }
-}
-
-void sled_apply(void) {
-    for (uint8_t cs=0; cs < CTRLER_COUNT; cs++) {
-        sled_spiio_t handle = {
-            .line = led_spi_lines[cs],
-            .frame = SLED_REGS_FRAME_1,
-            .offset = 0,
-            .length = sizeof(led_regs_t),
-            .buffer = (uint8_t*) &led_memcache[cs]
-        };
-        spi_write(handle);
-    }
-}
-
-void sled_set_cache_color(uint8_t led_base_index, rgb_color_t rgb) {
-    if (led_base_index == KC_NO) {
-        return;
-    }
-
-    const uint8_t offsets[] = {COLOR_R, COLOR_G, COLOR_B};
-
-    for (uint8_t ci=0; ci < sizeof(offsets); ci++) {
-        sled_pos_t pos = sled_matrix_pos(led_base_index + offsets[ci]);
-        led_memcache[pos.ctrler].pwm[pos.ind] = rgb.raw[ci];
-    }
-}
-
-void sled_set_cache_blink(uint8_t led_base_index, bool enable) {
-    if (led_base_index == KC_NO) {
-        return;
-    }
-
-    const uint8_t offsets[] = {COLOR_R, COLOR_G, COLOR_B};
-
-    for (uint8_t ci=0; ci < sizeof(offsets); ci++) {
-        sled_pos_t pos = sled_matrix_pos(led_base_index + offsets[ci]);
-
-        if (enable) {
-            led_memcache[pos.ctrler].blink[pos.byte] |= (1 << pos.bit);
-        } else {
-            led_memcache[pos.ctrler].blink[pos.byte] &= ~(1 << pos.bit);
-        }
-    }
-}
-
-void sled_early_init(void) {
-    palSetLine(LINE_LED1_CS);
-    palSetLine(LINE_LED2_CS);
-
-    spiStart(&SPID1, &spi1Config);
 }
 
 void sled_init(void) {
-  sled_ctrl_init();
-  sled_cache_init();
-  sled_on();
+    for (uint8_t chip = 0; chip < SLED_COUNT; chip++) {
+        palSetLine(sled_cs[chip]);
+    }
+    spiStart(&SPID1, &sled_spi_config);
+
+    sled_write_register(SLED_REG_SHUTDOWN, SLED_POWER_OFF);
+    sled_write_register(SLED_REG_PICTURE_DISPLAY, SLED_MATRIX_TYPE_2);
+    sled_write_register(SLED_REG_CURRENT, SLED_CURRENT);
+    sled_write_register(SLED_REG_SLEW_RATE, SLED_SLEW_RATE_ENABLE);
+    sled_write_register(SLED_REG_VAF_1, SLED_VAF_1_VALUE);
+    sled_write_register(SLED_REG_VAF_2, SLED_VAF_2_VALUE);
+
+    // All slots enabled, none blinking, all dark.
+    uint8_t bits[SLED_SLOTS / 8];
+    for (uint8_t chip = 0; chip < SLED_COUNT; chip++) {
+        memset(bits, 0xFF, sizeof(bits));
+        sled_write(chip, SLED_FRAME_1, SLED_FRAME_ENABLE, bits, sizeof(bits));
+        memset(bits, 0x00, sizeof(bits));
+        sled_write(chip, SLED_FRAME_1, SLED_FRAME_BLINK, bits, sizeof(bits));
+        sled_write(chip, SLED_FRAME_1, SLED_FRAME_PWM, pwm[chip], sizeof(pwm[chip]));
+    }
+    sled_on();
+}
+
+void sled_set_color(int index, uint8_t red, uint8_t green, uint8_t blue) {
+    if (index < 0 || index >= RGB_MATRIX_LED_COUNT) {
+        return;
+    }
+    uint8_t slot = led_slot[index];
+    sled_set_slot(slot, red);
+    sled_set_slot(slot + SLED_GREEN_OFFSET, green);
+    sled_set_slot(slot + SLED_BLUE_OFFSET, blue);
+}
+
+void sled_set_color_all(uint8_t red, uint8_t green, uint8_t blue) {
+    for (int i = 0; i < RGB_MATRIX_LED_COUNT; i++) {
+        sled_set_color(i, red, green, blue);
+    }
+}
+
+void sled_flush(void) {
+    if (dirty) {
+        dirty = false;
+        dark  = true;
+        for (uint8_t chip = 0; chip < SLED_COUNT; chip++) {
+            sled_write(chip, SLED_FRAME_1, SLED_FRAME_PWM, pwm[chip], sizeof(pwm[chip]));
+            for (uint8_t i = 0; i < SLED_SLOTS && dark; i++) {
+                dark = pwm[chip][i] == 0;
+            }
+        }
+        dark_since = timer_read();
+        if (!dark && !powered) {
+            sled_on();
+        }
+    } else if (dark && powered && timer_elapsed(dark_since) >= SLED_DARK_OFF_MS) {
+        sled_off();
+    }
 }
 
 void sled_on(void) {
-  sled_configure(LINE_LED1_CS, SLED_SHUTDOWN, SLED_POWER_NORMAL);
-  sled_configure(LINE_LED2_CS, SLED_SHUTDOWN, SLED_POWER_NORMAL);
+    sled_write_register(SLED_REG_SHUTDOWN, SLED_POWER_NORMAL);
+    powered = true;
 }
 
 void sled_off(void) {
-  sled_configure(LINE_LED1_CS, SLED_SHUTDOWN, SLED_POWER_OFF_SW);
-  sled_configure(LINE_LED2_CS, SLED_SHUTDOWN, SLED_POWER_OFF_SW);
+    sled_write_register(SLED_REG_SHUTDOWN, SLED_POWER_OFF);
+    powered = false;
 }
-
-rgb_color_t hsv_to_rgb(hsv_color_t hsv) {
-    rgb_color_t rgb;
-    uint8_t region, remainder, p, q, t;
-
-    if (hsv.s == 0)
-    {
-        rgb.r = hsv.v;
-        rgb.g = hsv.v;
-        rgb.b = hsv.v;
-        return rgb;
-    }
-
-    region = hsv.h / 43;
-    remainder = (hsv.h - (region * 43)) * 6;
-
-    p = (hsv.v * (255 - hsv.s)) >> 8;
-    q = (hsv.v * (255 - ((hsv.s * remainder) >> 8))) >> 8;
-    t = (hsv.v * (255 - ((hsv.s * (255 - remainder)) >> 8))) >> 8;
-
-    switch (region)
-    {
-        case 0:
-            rgb.r = hsv.v; rgb.g = t; rgb.b = p;
-            break;
-        case 1:
-            rgb.r = q; rgb.g = hsv.v; rgb.b = p;
-            break;
-        case 2:
-            rgb.r = p; rgb.g = hsv.v; rgb.b = t;
-            break;
-        case 3:
-            rgb.r = p; rgb.g = q; rgb.b = hsv.v;
-            break;
-        case 4:
-            rgb.r = t; rgb.g = p; rgb.b = hsv.v;
-            break;
-        default:
-            rgb.r = hsv.v; rgb.g = p; rgb.b = q;
-            break;
-    }
-
-    return rgb;
-}
-
-// hsv_color_t RgbToHsv(rgb_color_t rgb)
-// {
-//     hsv_color_t hsv;
-//     unsigned char rgbMin, rgbMax;
-
-//     rgbMin = rgb.r < rgb.g ? (rgb.r < rgb.b ? rgb.r : rgb.b) : (rgb.g < rgb.b ? rgb.g : rgb.b);
-//     rgbMax = rgb.r > rgb.g ? (rgb.r > rgb.b ? rgb.r : rgb.b) : (rgb.g > rgb.b ? rgb.g : rgb.b);
-
-//     hsv.v = rgbMax;
-//     if (hsv.v == 0)
-//     {
-//         hsv.h = 0;
-//         hsv.s = 0;
-//         return hsv;
-//     }
-
-//     hsv.s = 255 * long(rgbMax - rgbMin) / hsv.v;
-//     if (hsv.s == 0)
-//     {
-//         hsv.h = 0;
-//         return hsv;
-//     }
-
-//     if (rgbMax == rgb.r)
-//         hsv.h = 0 + 43 * (rgb.g - rgb.b) / (rgbMax - rgbMin);
-//     else if (rgbMax == rgb.g)
-//         hsv.h = 85 + 43 * (rgb.b - rgb.r) / (rgbMax - rgbMin);
-//     else
-//         hsv.h = 171 + 43 * (rgb.r - rgb.g) / (rgbMax - rgbMin);
-
-//     return hsv;
-// }

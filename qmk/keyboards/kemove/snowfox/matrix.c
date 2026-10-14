@@ -95,3 +95,14 @@ bool matrix_scan_custom(matrix_row_t current_matrix[]) {
     return changed;
 };
 
+#ifndef MATRIX_IO_DELAY
+#    define MATRIX_IO_DELAY 30
+#endif
+
+// Rows only need time to return high when a key on the column pulled one low.
+// QMK's default waits MATRIX_IO_DELAY after every column, even with no key down.
+void matrix_output_unselect_delay(uint8_t line, bool key_pressed) {
+    if (key_pressed) {
+        wait_us(MATRIX_IO_DELAY);
+    }
+}

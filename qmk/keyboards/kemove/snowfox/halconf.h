@@ -26,7 +26,7 @@
 #define HAL_USE_USB                         TRUE
 
 #define SERIAL_DEFAULT_BITRATE              9600
-#define SERIAL_BUFFERS_SIZE                   16
+#define SERIAL_BUFFERS_SIZE                   32
 
 #define SERIAL_USB_BUFFERS_SIZE              256
 #define USB_USE_WAIT                        TRUE

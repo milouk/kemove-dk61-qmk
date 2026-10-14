@@ -1,64 +1,61 @@
 // Copyright 2020 Yaotian Feng / Codetector
+// Copyright 2026 Michael Loukeris (@milouk)
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #pragma once
 
 #include "quantum.h"
-#include "ch.h"
-#include "hal.h"
-#include "sled17341.h"
-#include "board.h"
 
-#define SF_LED_STEP 0x40
-
-enum SNOWFOX_KEYCODES {
-    // QK_KB_0 so that VIA can address these as custom keycodes.
-    SNOWFOX_LED_ON = QK_KB_0,
-    SNOWFOX_LED_OFF,
-    SNOWFOX_LED_NEXT, // Next Profile
-    SNOWFOX_LED_PUP, // Profile Specific action Up
-    SNOWFOX_LED_PDN, // Profile Specific action Down
-    SNOWFOX_LED_BUP, // Brightness Up
-    SNOWFOX_LED_BDN, // Brightness Down
-    SNOWFOX_BLE_CONN,
-    SNOWFOX_BLE_DISCOVER,
-    SNOWFOX_BLE_DISCONN,
-    SNOWFOX_BLE_KB1,
-    SNOWFOX_BLE_KB2,
-    SNOWFOX_BLE_KB3,
-    SNOWFOX_DEBUG,
-    SNOWFOX_LED_TOGGLE,
-    SNOWFOX_SAFE_RANGE,
+enum snowfox_layers {
+    SF_LAYER_WIN,
+    SF_LAYER_MAC,
+    SF_LAYER_PROFILE1, // profiles 1 to 4 are layers over the base layer
+    SF_LAYER_PROFILE2,
+    SF_LAYER_PROFILE3,
+    SF_LAYER_PROFILE4,
+    SF_LAYER_FN_LOCK,
+    SF_LAYER_FN,
 };
 
-// Settings kept in the keyboard's EEPROM word.
+#define SF_PROFILE_COUNT 5 // profile 0 is the base layer alone
+
+enum snowfox_keycodes {
+    // Bluetooth host 1 to 3. Tap to connect, hold 3 seconds to pair.
+    SF_BT1 = QK_KB_0,
+    SF_BT2,
+    SF_BT3,
+    SF_BATT, // hold to show the battery level on the number row
+    SF_FRST, // hold 3 seconds to reset all settings
+    SF_PRF0, // profiles 0 to 4
+    SF_PRF1,
+    SF_PRF2,
+    SF_PRF3,
+    SF_PRF4,
+    SF_FNLK, // lock the F keys on the number row
+};
+
+// Settings kept at the start of the keyboard's EEPROM data block,
+// followed by the lighting of each profile.
 typedef union {
     uint32_t raw;
     struct {
-        bool    active : 1;
-        uint8_t profile : 7;
-        uint8_t brightness;
-        uint8_t ble_slot : 2; // last Bluetooth slot used plus one, 0 for none
+        uint8_t ble_slot : 2; // last Bluetooth host used plus one, 0 for none
+        uint8_t sleep : 3;    // sleep on battery, see snowfox_power.c
+        uint8_t profile : 3;
+        uint8_t switch_mode : 2; // what the switch on the back does, see snowfox.c
+        bool    host_is_mac : 1; // last operating system seen over USB
     };
 } snowfox_config_t;
 
-extern THD_WORKING_AREA(waLEDThread, 128);
-THD_FUNCTION(LEDThread, arg);
+#define SF_SWITCH_MODES 3
 
-extern SerialConfig serialCfg;
-extern thread_t *ble_thread;
+#define SF_LIGHTING_OFFSET(profile) (sizeof(snowfox_config_t) + (profile) * sizeof(rgb_config_t))
 
-extern const SPIConfig spi1Config;
-extern thread_t *led_thread;
-extern uint8_t led_brightness;
+snowfox_config_t snowfox_config_read(void);
+void             snowfox_config_write(snowfox_config_t config);
 
-void snowfox_early_init(void);
-void snowfox_early_led_init(void);
-
-void snowfox_led_on(void);
-void snowfox_led_off(void);
-void snowfox_led_next(void);
-void snowfox_led_toggle(void);
-void snowfox_led_save(void);
-void snowfox_led_load(void);
-
+void    snowfox_ble_select(uint8_t host, bool pair);
+uint8_t snowfox_profile(void);
+uint8_t snowfox_switch_mode(void);
+void    snowfox_set_switch_mode(uint8_t mode);
+void    snowfox_profile_select(uint8_t profile);
