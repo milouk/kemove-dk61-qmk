@@ -24,7 +24,14 @@
 #define SLED_POWER_NORMAL 0x01
 #define SLED_SLEW_RATE_ENABLE 0x01
 // Constant current, 8 mA + 0.5 mA per step. 25 gives 20.5 mA, as the stock firmware.
-#define SLED_CURRENT (0x80 | 25)
+#define SLED_CURRENT_ON 0x80
+#define SLED_CURRENT_MAX_STEP 25
+
+// The chips hiss with their drive current, and dimming by PWM does not help. So
+// above SLED_PWM_KNEE brightness is set by the current, from 8 mA up to the stock
+// 20.5 mA, with every colour stretched to the full PWM range. Below it the current
+// stays at 8 mA, where the hiss is barely audible, and PWM dims further.
+#define SLED_PWM_KNEE 64
 #define SLED_VAF_1_VALUE 0x44
 #define SLED_VAF_2_VALUE 0x44
 
@@ -59,6 +66,7 @@ static const uint8_t led_slot[RGB_MATRIX_LED_COUNT] = {
 };
 
 static uint8_t pwm[SLED_COUNT][SLED_SLOTS];
+static uint8_t current_step = SLED_CURRENT_MAX_STEP;
 static bool    dirty;
 static bool    powered;
 static bool    dark;
@@ -100,7 +108,7 @@ void sled_init(void) {
 
     sled_write_register(SLED_REG_SHUTDOWN, SLED_POWER_OFF);
     sled_write_register(SLED_REG_PICTURE_DISPLAY, SLED_MATRIX_TYPE_2);
-    sled_write_register(SLED_REG_CURRENT, SLED_CURRENT);
+    sled_write_register(SLED_REG_CURRENT, SLED_CURRENT_ON | current_step);
     sled_write_register(SLED_REG_SLEW_RATE, SLED_SLEW_RATE_ENABLE);
     sled_write_register(SLED_REG_VAF_1, SLED_VAF_1_VALUE);
     sled_write_register(SLED_REG_VAF_2, SLED_VAF_2_VALUE);
@@ -117,10 +125,23 @@ void sled_init(void) {
     sled_on();
 }
 
+static uint8_t stretch(uint8_t value, uint8_t brightness) {
+    uint16_t scaled = (uint16_t)value * 255 / brightness;
+    return scaled > 255 ? 255 : scaled;
+}
+
 void sled_set_color(int index, uint8_t red, uint8_t green, uint8_t blue) {
     if (index < 0 || index >= RGB_MATRIX_LED_COUNT) {
         return;
     }
+    uint8_t brightness = rgb_matrix_get_val();
+    if (brightness < SLED_PWM_KNEE) {
+        brightness = SLED_PWM_KNEE;
+    }
+    red   = stretch(red, brightness);
+    green = stretch(green, brightness);
+    blue  = stretch(blue, brightness);
+
     uint8_t slot = led_slot[index];
     sled_set_slot(slot, red);
     sled_set_slot(slot + SLED_GREEN_OFFSET, green);
@@ -133,7 +154,17 @@ void sled_set_color_all(uint8_t red, uint8_t green, uint8_t blue) {
     }
 }
 
+static void update_current(void) {
+    uint8_t brightness = rgb_matrix_get_val();
+    uint8_t step       = brightness <= SLED_PWM_KNEE ? 0 : (uint16_t)(brightness - SLED_PWM_KNEE) * SLED_CURRENT_MAX_STEP / (255 - SLED_PWM_KNEE);
+    if (step != current_step) {
+        current_step = step;
+        sled_write_register(SLED_REG_CURRENT, SLED_CURRENT_ON | step);
+    }
+}
+
 void sled_flush(void) {
+    update_current();
     if (dirty) {
         dirty = false;
         dark  = true;
@@ -151,6 +182,13 @@ void sled_flush(void) {
         sled_off();
     }
 }
+
+#ifdef SNOWFOX_TEST
+// Test builds: write one function register on both chips, for tuning by ear.
+void sled_test_write_register(uint8_t reg, uint8_t value) {
+    sled_write_register(reg, value);
+}
+#endif
 
 void sled_on(void) {
     sled_write_register(SLED_REG_SHUTDOWN, SLED_POWER_NORMAL);

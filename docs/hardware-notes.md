@@ -74,17 +74,25 @@ Flashed and running on this board.
 - The bootloader erases the whole application area when the status request after the first download block arrives, and it is deaf while that runs. A status request sent during the erase leaves it unresponsive to DFU requests until a power cycle.
 - The bootloader's 1 kB write buffer is not cleared by a DFU abort. After any abandoned download, power-cycle it before trying again, or the next write is rejected.
 
-## Open: lighting buzz
+## Lighting hiss
 
-To revisit. With the lights on, the board makes an audible buzz from the bottom left of the PCB. Measured by ear on a tuning build, changing one driver setting at a time:
+The noise is the open 10 µH coil marked `100` in the LED drivers' supply, next to the right SLED1734x. Pressing on it stops the sound. The LED drivers scan their matrix and draw current in pulses at an audible rate, and the coil's exposed winding vibrates with them.
 
-- Dimming by PWM is the loud part. At the same current, 74% PWM is audibly buzzier than 100%. Mixed colours buzz more than pure ones for the same reason, and the sound changes as the colour cycle runs.
-- Higher constant current is louder, but less so than PWM chopping. 8 mA at full PWM is the quietest lit state; 10 mA is close to as bright as 20.5 mA and clearly quieter.
-- No effect: staggered delay, display option (blink and frame bits), chip sync, slew rate, sending frame data only when it changes. Turning the VAF (anti-ghosting) settings off changes the tone only.
-- Each driver chip buzzes on its own. Chip 0 drives the left and upper part, chip 1 the right side and the bottom row.
-- Kemove's firmware uses the same chip settings, so it probably buzzes too at full brightness on mixed colours; not verified.
+Measured by ear, one setting at a time:
 
-Tried and set aside: brightness by drive current at full PWM, a palette of the seven colours that need no PWM, a stepped colour cycle, and nudging each LED's PWM value so partly lit LEDs do not all switch together. None was judged good enough to keep. Other boards with the same symptom settle for a brightness cap, pure colours, or a PWM-frequency or spread-spectrum setting that this chip does not appear to have. Damping the component at the bottom left is the untried hardware option.
+- It follows the drive current: barely audible at 8 mA, clear at the stock 20.5 mA. Full PWM at 20.5 mA hisses as much as partial PWM, so PWM dimming is not the cause.
+- No effect: staggered delay, display option (blink and frame bits), chip sync, slew rate, sending frame data only when it changes. The VAF (anti-ghosting) settings change the tone only.
+- Kemove's firmware uses the same chip settings and hisses the same.
+
+The firmware therefore sets brightness with the drive current, 8 to 20.5 mA, with colours at full PWM, and dims by PWM only below that. Varnish or glue on the coil damps it.
+
+## Board
+
+PCB `TURING_KB61-11U35-48P XGD V1.5`. U9 is the LPC11U35, U8 the ITON Bluetooth module (firmware 1.1.11, Bluetooth name `Kemove61M`).
+
+![LPC11U35 and Bluetooth module](images/mcu-and-bluetooth.jpg)
+
+![Switch side](images/board-switch-side.jpg)
 
 ## Sonix generations (not this board)
 

@@ -61,7 +61,6 @@
         },
         "driver": "custom",
         "led_count": 61,
-        "max_brightness": 200,
         "sleep": true
     },
     "url": "https://www.kemove.com/product/dk61-snowfox-shadow/",

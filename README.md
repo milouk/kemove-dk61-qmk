@@ -2,6 +2,8 @@
 
 QMK for the old-generation Kemove DK61 Shadow / Snowfox (PCB v1.5): the stock layout and Fn shortcuts, Bluetooth, RGB lighting, profiles, battery level and sleep, all configurable in VIA.
 
+![DK61 v1.5 PCB, component side](docs/images/board.jpg)
+
 > **Use at your own risk.** Flashing means opening the keyboard once and replacing Kemove's bootloader. Take the full backup described below first. This is a work in progress.
 
 ## Is this your board?
@@ -81,9 +83,22 @@ The bootloader must be 8192 bytes or smaller. Built at the default `-O2` with a 
 
 6. Repeat step 2 and compare `firmware.bin` with your image, then replug normally.
 
+`TP3`, `TP4` and `GND` are on the switch side, below the space bar row:
+
+![TP3 and GND test pads](docs/images/isp-pads.jpg)
+
 On macOS use Terminal only; do not open the drive in Finder.
 
 Never write an image whose 32-bit word at `0x2FC` is `0x12345678`, `0x87654321`, `0x43218765` or `0x4E697370`. Those turn on the chip's code read protection, and the last two disable this recovery mode for good.
+
+## Lighting hiss
+
+With the lights on, some boards hiss or whine. It is the open 10 µH coil marked `100` next to the right LED driver chip, at the bottom left seen from the keys: the LED drivers pull current in pulses, and its exposed winding vibrates. Kemove's firmware does the same.
+
+- Firmware: brightness is set with the LED drive current, so every step below full is quieter. The default brightness is the quiet level. Full brightness hisses as on stock.
+- Hardware: with the battery unplugged, soak the coil's winding in clear nail varnish (top coat, not glitter or metallic) or cover it with hot glue, and let it set. Pressing on the coil with a finger stops the noise, which is a quick way to check it is yours.
+
+![The 10 µH coil](docs/images/led-coil.jpg)
 
 ## Update
 
