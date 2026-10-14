@@ -1,5 +1,7 @@
 # Kemove DK61 Snowfox / Shadow
 
+![Kemove DK61 Snowfox v1.5 PCB](https://raw.githubusercontent.com/milouk/kemove-dk61-qmk/2ba0fdc7fb71eb5bf5812d947b367af0bfd8affd/docs/images/board.jpg)
+
 A 61 key hotswap keyboard with USB and Bluetooth. This is the first generation, sold as "Turing Gaming Keyboard" with USB ID `1EA7:9005` (Snowfox) or `1EA7:9006` (Shadow). Later DK61 boards use a Sonix MCU and are not supported here.
 
 * Keyboard Maintainer: [Michael Loukeris](https://github.com/milouk)
